@@ -1,0 +1,11 @@
+{
+    "first_name": "Михаил",
+    "last_name": "Иванов",
+    "phone": "+79269876543",
+    "email": "mikhail@example.com",
+    "birth_date": "1990-03-22",
+    "company": "ИП Иванов",
+    "position": "Владелец",
+    "comment": "Интересуется новыми разработками",
+    "status": "active"
+}

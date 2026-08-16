@@ -1,0 +1,494 @@
+import json
+import logging
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+from django.conf import settings
+import requests
+from apps.clients.models import Client
+from apps.events.models import Event
+from django.utils import timezone
+from django.contrib.auth import get_user_model
+from django.db.models import Q
+from django.core.files.base import ContentFile
+from io import BytesIO
+from PIL import Image
+import os
+from apps.bots.tasks import process_avatar
+
+User = get_user_model()
+logger = logging.getLogger(__name__)
+
+# Хранилище состояний
+search_states = {}
+list_states = {}
+avatar_states = {}
+
+# Ваш ngrok URL (замените на свой)
+NGROK_URL = "https://553e-194-58-37-17.ngrok-free.app"
+
+@csrf_exempt
+@require_POST
+def webhook(request):
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+        logger.info(f"📨 Получен вебхук")
+        
+        token = settings.TELEGRAM_BOT_TOKEN
+        if not token:
+            return JsonResponse({'error': 'No token'}, status=400)
+        
+        if 'message' in data:
+            message = data['message']
+            chat_id = message['chat']['id']
+            
+            # Обработка контакта
+            if 'contact' in message:
+                contact = message['contact']
+                phone = contact.get('phone_number', '')
+                first_name = contact.get('first_name', '')
+                last_name = contact.get('last_name', '')
+                telegram_id = str(chat_id)
+                
+                user = User.objects.first()
+                
+                client, created = Client.objects.get_or_create(
+                    phone=phone,
+                    defaults={
+                        'first_name': first_name,
+                        'last_name': last_name or '',
+                        'telegram_id': telegram_id,
+                        'user': user,
+                        'status': 'lead'
+                    }
+                )
+                
+                if not created:
+                    client.first_name = first_name
+                    client.last_name = last_name or client.last_name
+                    client.telegram_id = telegram_id
+                    client.save()
+                    logger.info(f"🔄 Обновлен клиент: {client.first_name} {client.last_name}")
+                
+                avatar_saved = False
+                if 'user_id' in contact:
+                    contact_user_id = contact['user_id']
+                    avatar_url = f'https://api.telegram.org/bot{token}/getUserProfilePhotos?user_id={contact_user_id}&limit=1'
+                    avatar_response = requests.get(avatar_url).json()
+                    
+                    if avatar_response.get('ok') and avatar_response.get('result', {}).get('total_count', 0) > 0:
+                        photos = avatar_response['result']['photos']
+                        if photos and len(photos) > 0:
+                            photo = photos[0][-1]
+                            file_id = photo['file_id']
+                            avatar_saved = True
+                            process_avatar.delay(client.id, file_id, token)
+                            logger.info(f"📷 Аватарка из контакта отправлена на обработку для {client.first_name}")
+                
+                if created:
+                    response_text = f"✅ Клиент добавлен!\n\n👤 {client.first_name} {client.last_name}\n📞 {client.phone}"
+                    if avatar_saved:
+                        response_text += "\n🖼️ Аватарка из контакта загружается..."
+                else:
+                    response_text = f"ℹ️ Клиент уже существует, данные обновлены:\n\n👤 {client.first_name} {client.last_name}\n📞 {client.phone}"
+                    if avatar_saved:
+                        response_text += "\n🖼️ Аватарка из контакта обновлена..."
+                
+                url = f'https://api.telegram.org/bot{token}/sendMessage'
+                requests.post(url, json={'chat_id': chat_id, 'text': response_text})
+                return JsonResponse({'status': 'ok'})
+            
+            # Обработка фото
+            if 'photo' in message:
+                logger.info(f"📷 Получено фото от {chat_id}")
+                
+                if chat_id in avatar_states:
+                    client_id = avatar_states[chat_id]
+                    try:
+                        client = Client.objects.get(id=client_id)
+                    except Client.DoesNotExist:
+                        response_text = "❌ Клиент не найден"
+                        url = f'https://api.telegram.org/bot{token}/sendMessage'
+                        requests.post(url, json={'chat_id': chat_id, 'text': response_text})
+                        del avatar_states[chat_id]
+                        return JsonResponse({'status': 'ok'})
+                    
+                    photo = message['photo'][-1]
+                    file_id = photo['file_id']
+                    
+                    process_avatar.delay(client.id, file_id, token)
+                    
+                    response_text = f"✅ Фото получено! Аватарка обрабатывается в фоне для {client.first_name} {client.last_name}"
+                    del avatar_states[chat_id]
+                else:
+                    response_text = "📷 Сначала найдите клиента через /avatar [имя]"
+                
+                url = f'https://api.telegram.org/bot{token}/sendMessage'
+                requests.post(url, json={'chat_id': chat_id, 'text': response_text})
+                return JsonResponse({'status': 'ok'})
+            
+            if 'text' in message:
+                text = message['text'].strip()
+                logger.info(f"💬 Текст: {text}")
+                
+                # Режим поиска
+                if chat_id in search_states and search_states[chat_id] == 'searching':
+                    search_states[chat_id] = None
+                    clients = Client.objects.filter(
+                        Q(first_name__icontains=text) |
+                        Q(last_name__icontains=text) |
+                        Q(phone__icontains=text) |
+                        Q(company__icontains=text) |
+                        Q(email__icontains=text) |
+                        Q(comment__icontains=text)
+                    )
+                    
+                    if clients.exists():
+                        for client in clients[:5]:
+                            send_client_card(chat_id, client, token)
+                        return JsonResponse({'status': 'ok'})
+                    else:
+                        response_text = "❌ Клиент не найден.\n\nПопробуйте другой запрос или используйте /find для нового поиска."
+                        url = f'https://api.telegram.org/bot{token}/sendMessage'
+                        requests.post(url, json={'chat_id': chat_id, 'text': response_text, 'parse_mode': 'Markdown'})
+                        return JsonResponse({'status': 'ok'})
+                
+                # Обработка команд
+                response_text = "Неизвестная команда. Используйте /help"
+                
+                if text == '/start':
+                    response_text = "👋 Привет! Я CRM бот для управления клиентами.\n\nИспользуйте /help для списка команд."
+                    url = f'https://api.telegram.org/bot{token}/sendMessage'
+                    requests.post(url, json={'chat_id': chat_id, 'text': response_text, 'parse_mode': 'Markdown'})
+                    return JsonResponse({'status': 'ok'})
+                
+                elif text == '/help':
+                    response_text = (
+                        "📖 *Доступные команды:*\n\n"
+                        "/start - Приветствие\n"
+                        "/help - Справка\n"
+                        "/add - Добавить клиента\n"
+                        "/list - Список клиентов\n"
+                        "/list_new - Новые сначала\n"
+                        "/list_old - Старые сначала\n"
+                        "/list_alpha - По алфавиту\n"
+                        "/find - Найти клиента\n"
+                        "/events - Ближайшие события\n"
+                        "/birthdays - Дни рождения\n"
+                        "/stats - Статистика\n\n"
+                        "📷 *Для добавления аватарки:*\n"
+                        "1. /avatar [имя или телефон] - найти клиента\n"
+                        "2. Отправить фото (аватарка обработается в фоне)\n\n"
+                        "👤 *При добавлении контакта:*\n"
+                        "Аватарка из контакта загружается автоматически!"
+                    )
+                    url = f'https://api.telegram.org/bot{token}/sendMessage'
+                    requests.post(url, json={'chat_id': chat_id, 'text': response_text, 'parse_mode': 'Markdown'})
+                    return JsonResponse({'status': 'ok'})
+                
+                elif text.startswith('/avatar'):
+                    search_query = text.replace('/avatar', '').strip()
+                    if search_query:
+                        clients = Client.objects.filter(
+                            Q(first_name__icontains=search_query) |
+                            Q(last_name__icontains=search_query) |
+                            Q(phone__icontains=search_query)
+                        )
+                        if clients.exists():
+                            client = clients[0]
+                            avatar_states[chat_id] = client.id
+                            response_text = f"📷 Найден клиент: {client.first_name} {client.last_name}\nОтправьте фото для этого клиента"
+                            if client.avatar:
+                                response_text += "\n(У клиента уже есть аватарка, новое фото заменит старую)"
+                        else:
+                            response_text = "❌ Клиент не найден. Проверьте имя или телефон"
+                    else:
+                        response_text = "📷 Используйте: /avatar [имя или телефон]"
+                    url = f'https://api.telegram.org/bot{token}/sendMessage'
+                    requests.post(url, json={'chat_id': chat_id, 'text': response_text, 'parse_mode': 'Markdown'})
+                    return JsonResponse({'status': 'ok'})
+                
+                elif text in ['/list', '/list_new', '/list_old', '/list_alpha']:
+                    if text == '/list_new':
+                        list_states[chat_id] = {'sort': 'created_at', 'order': 'desc'}
+                    elif text == '/list_old':
+                        list_states[chat_id] = {'sort': 'created_at', 'order': 'asc'}
+                    elif text == '/list_alpha':
+                        list_states[chat_id] = {'sort': 'first_name', 'order': 'asc'}
+                    else:
+                        list_states[chat_id] = {'sort': 'created_at', 'order': 'desc'}
+                    response_text = get_clients_list(chat_id)
+                    url = f'https://api.telegram.org/bot{token}/sendMessage'
+                    requests.post(url, json={'chat_id': chat_id, 'text': response_text, 'parse_mode': 'Markdown'})
+                    return JsonResponse({'status': 'ok'})
+                
+                elif text == '/stats':
+                    total = Client.objects.count()
+                    vip = Client.objects.filter(status='vip').count()
+                    active = Client.objects.filter(status='active').count()
+                    regular = Client.objects.filter(status='regular').count()
+                    lead = Client.objects.filter(status='lead').count()
+                    
+                    response_text = (
+                        f"📊 *Статистика CRM:*\n\n"
+                        f"👥 Всего клиентов: *{total}*\n\n"
+                        "По статусам:\n"
+                        f"⭐ VIP: {vip}\n"
+                        f"✅ Активные: {active}\n"
+                        f"🔄 Постоянные: {regular}\n"
+                        f"🆕 Лиды: {lead}"
+                    )
+                    url = f'https://api.telegram.org/bot{token}/sendMessage'
+                    requests.post(url, json={'chat_id': chat_id, 'text': response_text, 'parse_mode': 'Markdown'})
+                    return JsonResponse({'status': 'ok'})
+                
+                elif text == '/add':
+                    response_text = "📇 Отправьте контакт, чтобы добавить клиента\n\nНажмите на скрепку → Контакт\n\n🖼️ Аватарка из контакта загрузится автоматически!"
+                    url = f'https://api.telegram.org/bot{token}/sendMessage'
+                    requests.post(url, json={'chat_id': chat_id, 'text': response_text, 'parse_mode': 'Markdown'})
+                    return JsonResponse({'status': 'ok'})
+                
+                elif text == '/find':
+                    response_text = "🔍 Введите имя, телефон, компанию или email для поиска"
+                    search_states[chat_id] = 'searching'
+                    url = f'https://api.telegram.org/bot{token}/sendMessage'
+                    requests.post(url, json={'chat_id': chat_id, 'text': response_text, 'parse_mode': 'Markdown'})
+                    return JsonResponse({'status': 'ok'})
+                
+                elif text == '/events':
+                    now = timezone.now()
+                    events = Event.objects.filter(event_date__gte=now, is_completed=False).order_by('event_date')[:5]
+                    
+                    if events:
+                        response_text = "📅 *Ближайшие события:*\n\n"
+                        for event in events:
+                            date_str = event.event_date.strftime("%d.%m %H:%M")
+                            response_text += f"📌 *{event.title}*\n"
+                            response_text += f"   👤 {event.client.first_name} {event.client.last_name}\n"
+                            response_text += f"   🕐 {date_str}\n"
+                            if event.description:
+                                response_text += f"   📝 {event.description[:50]}...\n"
+                            response_text += "\n"
+                    else:
+                        response_text = "📅 Нет запланированных событий."
+                    url = f'https://api.telegram.org/bot{token}/sendMessage'
+                    requests.post(url, json={'chat_id': chat_id, 'text': response_text, 'parse_mode': 'Markdown'})
+                    return JsonResponse({'status': 'ok'})
+                
+                elif text == '/birthdays':
+                    today = timezone.now().date()
+                    clients_list = []
+                    
+                    for client in Client.objects.filter(birth_date__isnull=False):
+                        if client.birth_date:
+                            next_birthday = client.birth_date.replace(year=today.year)
+                            if next_birthday < today:
+                                next_birthday = next_birthday.replace(year=today.year + 1)
+                            days_until = (next_birthday - today).days
+                            if 0 <= days_until <= 7:
+                                clients_list.append((client, days_until))
+                    
+                    if clients_list:
+                        for client, days in clients_list:
+                            send_client_birthday_card(chat_id, client, days, token)
+                        return JsonResponse({'status': 'ok'})
+                    else:
+                        response_text = "🎂 В ближайшую неделю нет дней рождения."
+                        url = f'https://api.telegram.org/bot{token}/sendMessage'
+                        requests.post(url, json={'chat_id': chat_id, 'text': response_text, 'parse_mode': 'Markdown'})
+                        return JsonResponse({'status': 'ok'})
+                
+                else:
+                    if text.startswith('/'):
+                        response_text = f"Неизвестная команда: {text}\nИспользуйте /help для списка команд"
+                    else:
+                        response_text = f"Получено: {text}"
+                    url = f'https://api.telegram.org/bot{token}/sendMessage'
+                    requests.post(url, json={'chat_id': chat_id, 'text': response_text, 'parse_mode': 'Markdown'})
+                    return JsonResponse({'status': 'ok'})
+        
+        return JsonResponse({'status': 'ok'})
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+def format_time_in_db(days):
+    if days < 1:
+        return "меньше дня"
+    elif days == 1:
+        return "1 день"
+    elif days < 7:
+        return f"{days} дня"
+    elif days < 30:
+        weeks = days // 7
+        return f"{weeks} {'неделю' if weeks == 1 else 'недели' if weeks < 5 else 'недель'}"
+    elif days < 365:
+        months = days // 30
+        return f"{months} {'месяц' if months == 1 else 'месяца' if months < 5 else 'месяцев'}"
+    else:
+        years = days // 365
+        return f"{years} {'год' if years == 1 else 'года' if years < 5 else 'лет'}"
+
+
+def get_clients_list(chat_id):
+    state = list_states.get(chat_id, {'sort': 'created_at', 'order': 'desc'})
+    sort_field = state.get('sort', 'created_at')
+    order = state.get('order', 'desc')
+    
+    sort_mapping = {
+        'created_at': 'created_at',
+        'first_name': 'first_name',
+        'last_name': 'last_name',
+        'phone': 'phone'
+    }
+    sort_by = sort_mapping.get(sort_field, 'created_at')
+    
+    if order == 'desc':
+        sort_by = f'-{sort_by}'
+    
+    all_clients = Client.objects.all().order_by(sort_by)
+    total = all_clients.count()
+    
+    if total == 0:
+        return "📭 Клиентов пока нет.\n\nДобавьте клиента через /add"
+    
+    response_text = f"📋 *Список клиентов* (всего {total})\n\n"
+    response_text += f"🔄 Сортировка: {get_sort_label(sort_field, order)}\n\n"
+    
+    for i, client in enumerate(all_clients, 1):
+        status_emoji = {'vip': '⭐', 'active': '✅', 'regular': '🔄', 'lead': '🆕', 'inactive': '⏸️'}.get(client.status, '📌')
+        response_text += f"{i}. {status_emoji} *{client.first_name} {client.last_name}*\n"
+        response_text += f"   📞 {client.phone}\n"
+        if client.company:
+            response_text += f"   🏢 {client.company}\n"
+        if client.email:
+            response_text += f"   ✉️ {client.email}\n"
+        if client.comment:
+            response_text += f"   📝 {client.comment[:60]}...\n" if len(client.comment) > 60 else f"   📝 {client.comment}\n"
+        if client.avatar:
+            response_text += f"   🖼️ Есть аватарка\n"
+        
+        days_in_db = (timezone.now() - client.created_at).days
+        response_text += f"   📅 В базе: {format_time_in_db(days_in_db)}\n"
+        response_text += "\n"
+    
+    return response_text
+
+
+def get_sort_label(field, order):
+    labels = {
+        'created_at': 'по дате добавления',
+        'first_name': 'по имени',
+        'last_name': 'по фамилии',
+        'phone': 'по телефону'
+    }
+    label = labels.get(field, 'по дате добавления')
+    direction = '⬇️ (новые/по возрастанию)' if order == 'desc' else '⬆️ (старые/по убыванию)'
+    return f"{label} {direction}"
+
+
+def send_client_card(chat_id, client, token):
+    """Отправка карточки клиента с мини-аватаркой (70x70)"""
+    text = f"👤 *{client.first_name} {client.last_name}*\n\n"
+    text += f"📞 {client.phone}\n"
+    if client.company:
+        text += f"🏢 {client.company}\n"
+    if client.email:
+        text += f"✉️ {client.email}\n"
+    if client.comment:
+        text += f"📝 {client.comment[:100]}...\n"
+    if client.birth_date:
+        text += f"🎂 {client.birth_date.strftime('%d.%m.%Y')}\n"
+    text += f"📅 В базе: {format_time_in_db((timezone.now() - client.created_at).days)}"
+    
+    if client.avatar and client.avatar.name:
+        try:
+            avatar_url = f"{NGROK_URL}{client.avatar.url}"
+            photo_url = f'https://api.telegram.org/bot{token}/sendPhoto'
+            response = requests.post(photo_url, json={
+                'chat_id': chat_id,
+                'photo': avatar_url,
+                'caption': text,
+                'parse_mode': 'Markdown',
+                'width': 70,
+                'height': 70
+            })
+            if response.status_code == 200:
+                logger.info(f"🖼️ Мини-аватарка (70x70) отправлена для {client.first_name}")
+                return
+            else:
+                logger.error(f"❌ Ошибка отправки фото: {response.text}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка отправки фото: {e}")
+    
+    url = f'https://api.telegram.org/bot{token}/sendMessage'
+    requests.post(url, json={
+        'chat_id': chat_id,
+        'text': text,
+        'parse_mode': 'Markdown'
+    })
+
+
+def send_client_birthday_card(chat_id, client, days, token):
+    """Отправка карточки с днем рождения с мини-аватаркой (70x70)"""
+    text = f"🎂 *{client.first_name} {client.last_name}*\n"
+    text += f"📅 {client.birth_date.strftime('%d.%m')} (через {days} дн.)\n"
+    text += f"📞 {client.phone}\n"
+    if client.company:
+        text += f"🏢 {client.company}\n"
+    if client.comment:
+        text += f"📝 {client.comment[:50]}...\n"
+    
+    if client.avatar and client.avatar.name:
+        try:
+            avatar_url = f"{NGROK_URL}{client.avatar.url}"
+            photo_url = f'https://api.telegram.org/bot{token}/sendPhoto'
+            response = requests.post(photo_url, json={
+                'chat_id': chat_id,
+                'photo': avatar_url,
+                'caption': text,
+                'parse_mode': 'Markdown',
+                'width': 70,
+                'height': 70
+            })
+            if response.status_code == 200:
+                logger.info(f"🖼️ Мини-аватарка (70x70) отправлена для {client.first_name} (день рождения)")
+                return
+            else:
+                logger.error(f"❌ Ошибка отправки фото: {response.text}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка отправки фото: {e}")
+    
+    url = f'https://api.telegram.org/bot{token}/sendMessage'
+    requests.post(url, json={
+        'chat_id': chat_id,
+        'text': text,
+        'parse_mode': 'Markdown'
+    })
+                elif text == '/help':
+                    logger.info("🔍 Обработка команды /help")
+                    response_text = (
+                        "📖 *Доступные команды:*\n\n"
+                        "/start - Приветствие\n"
+                        "/help - Справка\n"
+                        "/add - Добавить клиента\n"
+                        "/list - Список клиентов\n"
+                        "/list_new - Новые сначала\n"
+                        "/list_old - Старые сначала\n"
+                        "/list_alpha - По алфавиту\n"
+                        "/find - Найти клиента\n"
+                        "/events - Ближайшие события\n"
+                        "/birthdays - Дни рождения\n"
+                        "/stats - Статистика\n\n"
+                        "📷 *Для добавления аватарки:*\n"
+                        "1. /avatar [имя или телефон] - найти клиента\n"
+                        "2. Отправить фото (аватарка обработается в фоне)\n\n"
+                        "👤 *При добавлении контакта:*\n"
+                    )
+                    logger.info(f"📤 Ответ: {response_text[:50]}...")
+                    url = f'https://api.telegram.org/bot{token}/sendMessage'
+                    requests.post(url, json={'chat_id': chat_id, 'text': response_text, 'parse_mode': 'Markdown'})
+                    logger.info("✅ Ответ отправлен")
+                    return JsonResponse({'status': 'ok'})

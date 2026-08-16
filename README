@@ -1,0 +1,156 @@
+# Собрать и запустить контейнеры
+docker-compose -f docker/docker-compose.yml up -d --build
+
+# Или использовать Makefile
+make up
+
+# Создать суперпользователя
+make createsuperuser
+
+Доступ к сервисам
+Django Admin: http://localhost:8000/admin/
+
+API Documentation: http://localhost:8000/swagger/
+
+Celery Flower: http://localhost:5555/
+
+PostgreSQL: localhost:5433 (user: crm_user, password: secure_password_dev)
+
+Структура проекта
+crm_project/
+├── docker/
+│   ├── docker-compose.yml          # Разработка
+│   └── docker-compose.production.yml # Продакшен
+├── backend/
+│   ├── apps/
+│   │   ├── clients/                # Клиенты и контакты
+│   │   ├── events/                 # События и напоминания
+│   │   ├── messages/               # Рассылки и шаблоны
+│   │   ├── bots/                   # Интеграция с ботами
+│   │   │   ├── telegram/
+│   │   │   └── max/
+│   │   └── ai/                     # ИИ сервисы
+│   ├── crm/settings/               # Настройки Django
+│   ├── static/                     # Статические файлы
+│   ├── media/                      # Загруженные файлы
+│   ├── Dockerfile
+│   └── requirements.txt
+├── nginx/
+│   ├── Dockerfile
+│   └── nginx.conf
+└── scripts/
+    ├── entrypoint.sh
+    └── entrypoint.prod.sh
+
+Разработка
+
+make up          # Запуск контейнеров
+make down        # Остановка контейнеров
+make logs        # Просмотр логов
+make shell       # Django shell
+make migrate     # Миграции
+make createsuperuser  # Создание админа
+make test        # Запуск тестов
+make restart     # Перезапуск всех контейнеров
+make celery      # Перезапуск Celery
+make flower      # Открыть Flower UI
+make clean       # Очистка всех данных
+
+Продакшен
+
+make prod-up     # Запуск в продакшене
+make prod-down   # Остановка продакшена
+
+Переменные окружения
+
+Основные переменные в .env.dev и .env.prod:
+
+SECRET_KEY - Секретный ключ Django
+
+DEBUG - Режим отладки
+
+POSTGRES_* - Настройки PostgreSQL
+
+REDIS_* - Настройки Redis
+
+TELEGRAM_BOT_TOKEN - Токен Telegram бота
+
+MAX_BOT_TOKEN - Токен MAX бота
+
+OPENAI_API_KEY - Ключ OpenAI
+
+EMAIL_* - Настройки email
+
+Добавление нового приложения
+
+docker-compose -f docker/docker-compose.yml exec backend python manage.py startapp app_name apps/app_name
+
+Создание миграций
+
+docker-compose -f docker/docker-compose.yml exec backend python manage.py makemigrations
+docker-compose -f docker/docker-compose.yml exec backend python manage.py migrate
+
+
+Фронтенд 
+frontend/
+├── src/
+│   ├── components/          # Компоненты React
+│   │   ├── Clients/
+│   │   │   ├── ClientList.jsx   # Список клиентов
+│   │   │   └── Clients.css      # Стили для списка
+│   │   ├── Dashboard/
+│   │   │   └── Dashboard.jsx    # Главная страница
+│   │   └── Layout/
+│   │       ├── MainLayout.jsx   # Основной шаблон
+│   │       └── MainLayout.css   # Стили
+│   ├── api/
+│   │   └── client.js        # Запросы к API
+│   ├── App.jsx              # Корневой компонент
+│   ├── main.jsx             # Точка входа
+│   └── index.css            # Глобальные стили
+├── package.json             # Зависимости
+├── vite.config.js           # Настройка Vite
+└── index.html               # HTML шаблон
+
+
+
+backend/apps/bots/telegram/
+├── __init__.py
+├── views.py          # Основной файл, только маршрутизация
+├── handlers.py       # Все обработчики команд и callback'ов
+├── keyboards.py      # Клавиатуры и кнопки
+├── states.py         # Управление состояниями
+├── utils.py          # Вспомогательные функции
+└── bot.py           # Класс бота
+
+
+backend/apps/bots/telegram/
+├── __init__.py
+├── views.py                 # Маршрутизация (главный вход)
+├── keyboards.py             # Общие клавиатуры
+├── states.py               # Управление состояниями
+├── utils.py                # Вспомогательные функции
+├── handlers/
+│   ├── __init__.py
+│   ├── base.py             # Базовые утилиты для хендлеров
+│   ├── commands/           # Хендлеры команд
+│   │   ├── __init__.py
+│   │   ├── start.py
+│   │   ├── help.py
+│   │   ├── list.py
+│   │   ├── stats.py
+│   │   ├── add.py
+│   │   ├── find.py
+│   │   ├── birthdays.py
+│   │   └── plan.py
+│   ├── callbacks/          # Хендлеры callback кнопок
+│   │   ├── __init__.py
+│   │   ├── client_actions.py
+│   │   ├── planning.py
+│   │   ├── calendar.py
+│   │   └── navigation.py
+│   └── messages/           # Хендлеры сообщений
+│       ├── __init__.py
+│       ├── contact.py
+│       └── text.py
+└── bot.py                  # (опционально)

@@ -1,0 +1,11 @@
+{
+    "first_name": "Анна",
+    "last_name": "Смирнова",
+    "phone": "+79161234567",
+    "email": "anna@example.com",
+    "birth_date": "1985-08-15",
+    "company": "ООО ТехноПро",
+    "position": "CEO",
+    "comment": "Любит современные технологии и кофе с собой",
+    "status": "vip"
+}
