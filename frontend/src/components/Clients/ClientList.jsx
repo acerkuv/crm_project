@@ -15,6 +15,12 @@ import {
   Card,
   Tooltip,
   Upload,
+  Descriptions,
+  Divider,
+  Row,
+  Col,
+  Spin,
+  Timeline,
 } from 'antd'
 import {
   SearchOutlined,
@@ -25,6 +31,17 @@ import {
   EyeOutlined,
   UploadOutlined,
   CameraOutlined,
+  CalendarOutlined,
+  PhoneOutlined,
+  MailOutlined,
+  EnvironmentOutlined,  // вместо BuildingOutlined
+  ClockCircleOutlined,
+  CloseOutlined,
+  CheckOutlined,
+  FileTextOutlined,
+  TeamOutlined,
+  StarOutlined,
+  HomeOutlined,  // вместо BuildingOutlined
 } from '@ant-design/icons'
 import axios from 'axios'
 import dayjs from 'dayjs'
@@ -52,20 +69,23 @@ const ClientList = () => {
   const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
+  const [cardModalVisible, setCardModalVisible] = useState(false)
   const [editingClient, setEditingClient] = useState(null)
+  const [selectedClient, setSelectedClient] = useState(null)
   const [searchText, setSearchText] = useState('')
   const [form] = Form.useForm()
   const [tags, setTags] = useState([])
   const [avatarModalVisible, setAvatarModalVisible] = useState(false)
-  const [selectedClient, setSelectedClient] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [cardLoading, setCardLoading] = useState(false)
+  const [clientEvents, setClientEvents] = useState([])
 
   const statusMap = {
-    vip: { color: 'gold', text: 'VIP' },
-    active: { color: 'green', text: 'Активный' },
-    regular: { color: 'blue', text: 'Постоянный' },
-    lead: { color: 'orange', text: 'Лид' },
-    inactive: { color: 'red', text: 'Неактивный' },
+    vip: { color: 'gold', text: '⭐ VIP', icon: <StarOutlined /> },
+    active: { color: 'green', text: '✅ Активный', icon: <CheckOutlined /> },
+    regular: { color: 'blue', text: '🔄 Постоянный', icon: <TeamOutlined /> },
+    lead: { color: 'orange', text: '🆕 Лид', icon: <UserOutlined /> },
+    inactive: { color: 'red', text: '⏸️ Неактивный', icon: <CloseOutlined /> },
   }
 
   useEffect(() => {
@@ -77,7 +97,6 @@ const ClientList = () => {
     try {
       setLoading(true)
       const response = await api.get('/api/clients/')
-      // ИСПРАВЛЕНО: берем results или сам массив
       const data = response.data.results || response.data || []
       setClients(data)
     } catch (error) {
@@ -95,6 +114,16 @@ const ClientList = () => {
       setTags(data)
     } catch (error) {
       console.error('Ошибка загрузки тегов:', error)
+    }
+  }
+
+  const fetchClientEvents = async (clientId) => {
+    try {
+      const response = await api.get(`/api/scheduled-events/?client=${clientId}`)
+      const data = response.data.results || response.data || []
+      setClientEvents(data)
+    } catch (error) {
+      console.error('Ошибка загрузки событий клиента:', error)
     }
   }
 
@@ -145,6 +174,7 @@ const ClientList = () => {
       if (editingClient) {
         await api.put(`/api/clients/${editingClient.id}/`, data)
         message.success('Клиент обновлен')
+        setCardModalVisible(false)
       } else {
         await api.post('/api/clients/', data)
         message.success('Клиент добавлен')
@@ -172,6 +202,9 @@ const ClientList = () => {
       message.success('Аватарка обновлена')
       setAvatarModalVisible(false)
       fetchClients()
+      if (cardModalVisible) {
+        fetchClientDetails(selectedClient.id)
+      }
     } catch (error) {
       console.error('Ошибка загрузки аватарки:', error)
       message.error('Ошибка загрузки аватарки')
@@ -180,10 +213,38 @@ const ClientList = () => {
     }
   }
 
+  const fetchClientDetails = async (clientId) => {
+    setCardLoading(true)
+    try {
+      const response = await api.get(`/api/clients/${clientId}/`)
+      setSelectedClient(response.data)
+      await fetchClientEvents(clientId)
+    } catch (error) {
+      console.error('Ошибка загрузки клиента:', error)
+      message.error('Ошибка загрузки клиента')
+    } finally {
+      setCardLoading(false)
+    }
+  }
+
+  const showClientCard = (record) => {
+    fetchClientDetails(record.id)
+    setCardModalVisible(true)
+  }
+
   const getAvatarUrl = (avatar) => {
     if (!avatar) return null
     if (avatar.startsWith('http')) return avatar
     return `http://localhost:8000${avatar}`
+  }
+
+  const handlePlanEvent = (client) => {
+    // Закрываем карточку и открываем создание события
+    setCardModalVisible(false)
+    // Перенаправляем на страницу событий с параметром клиента
+    // Или можно открыть модалку создания события прямо здесь
+    message.info(`Открыть планирование для ${client.first_name} ${client.last_name}`)
+    // TODO: Открыть модалку создания события с предзаполненным клиентом
   }
 
   const columns = [
@@ -191,55 +252,40 @@ const ClientList = () => {
       title: 'Аватар',
       dataIndex: 'avatar',
       key: 'avatar',
+      width: 80,
       render: (avatar, record) => (
-        <div style={{ position: 'relative', display: 'inline-block' }}>
-          <Avatar 
-            src={getAvatarUrl(avatar)}
-            icon={!avatar && <UserOutlined />}
-            size={50}
-            style={{ cursor: 'pointer', border: '2px solid #e8e8e8' }}
-            onClick={() => {
-              setSelectedClient(record)
-              setAvatarModalVisible(true)
-            }}
-          />
-          <CameraOutlined 
-            style={{
-              position: 'absolute',
-              bottom: -2,
-              right: -2,
-              background: '#1890ff',
-              color: 'white',
-              borderRadius: '50%',
-              padding: '2px',
-              fontSize: '12px',
-              cursor: 'pointer',
-              border: '2px solid white',
-            }}
-            onClick={() => {
-              setSelectedClient(record)
-              setAvatarModalVisible(true)
-            }}
-          />
-        </div>
+        <Avatar 
+          src={getAvatarUrl(avatar)}
+          icon={!avatar && <UserOutlined />}
+          size={50}
+          style={{ cursor: 'pointer', border: '2px solid #e8e8e8' }}
+          onClick={() => showClientCard(record)}
+        />
       ),
     },
     {
       title: 'Имя',
       dataIndex: 'full_name',
       key: 'full_name',
-      render: (_, record) => `${record.first_name} ${record.last_name}`,
+      render: (_, record) => (
+        <div>
+          <div style={{ fontWeight: '500' }}>{record.first_name} {record.last_name}</div>
+          {record.company && <div style={{ fontSize: '12px', color: '#999' }}>{record.company}</div>}
+        </div>
+      ),
       sorter: (a, b) => a.first_name.localeCompare(b.first_name),
     },
     {
       title: 'Телефон',
       dataIndex: 'phone',
       key: 'phone',
+      render: (phone) => <a href={`tel:${phone}`}>{phone}</a>,
     },
     {
       title: 'Email',
       dataIndex: 'email',
       key: 'email',
+      render: (email) => email ? <a href={`mailto:${email}`}>{email}</a> : '—',
     },
     {
       title: 'Статус',
@@ -260,6 +306,7 @@ const ClientList = () => {
       title: 'В базе',
       dataIndex: 'created_at',
       key: 'created_at',
+      width: 120,
       render: (date) => {
         const days = dayjs().diff(dayjs(date), 'day')
         if (days < 1) return 'меньше дня'
@@ -272,14 +319,31 @@ const ClientList = () => {
     {
       title: 'Действия',
       key: 'actions',
+      width: 200,
       render: (_, record) => (
-        <Space size="middle">
+        <Space>
+          <Tooltip title="Просмотр карточки">
+            <Button 
+              icon={<EyeOutlined />} 
+              size="small"
+              onClick={() => showClientCard(record)}
+            />
+          </Tooltip>
           <Tooltip title="Редактировать">
             <Button 
               type="primary" 
               icon={<EditOutlined />} 
               size="small"
               onClick={() => handleEdit(record)}
+            />
+          </Tooltip>
+          <Tooltip title="Запланировать событие">
+            <Button 
+              type="primary" 
+              ghost
+              icon={<CalendarOutlined />} 
+              size="small"
+              onClick={() => handlePlanEvent(record)}
             />
           </Tooltip>
           <Popconfirm
@@ -289,7 +353,9 @@ const ClientList = () => {
             okText="Да"
             cancelText="Нет"
           >
-            <Button danger icon={<DeleteOutlined />} size="small" />
+            <Tooltip title="Удалить">
+              <Button danger icon={<DeleteOutlined />} size="small" />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -326,18 +392,18 @@ const ClientList = () => {
         }}
       />
 
+      {/* Модалка создания/редактирования клиента */}
       <Modal
         title={editingClient ? 'Редактировать клиента' : 'Новый клиент'}
         open={modalVisible}
-        onCancel={() => setModalVisible(false)}
+        onCancel={() => {
+          setModalVisible(false)
+          form.resetFields()
+        }}
         footer={null}
         width={600}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSubmit}
-        >
+        <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Form.Item
             name="first_name"
             label="Имя"
@@ -346,17 +412,11 @@ const ClientList = () => {
             <Input />
           </Form.Item>
           
-          <Form.Item
-            name="last_name"
-            label="Фамилия"
-          >
+          <Form.Item name="last_name" label="Фамилия">
             <Input />
           </Form.Item>
           
-          <Form.Item
-            name="middle_name"
-            label="Отчество"
-          >
+          <Form.Item name="middle_name" label="Отчество">
             <Input />
           </Form.Item>
           
@@ -368,39 +428,23 @@ const ClientList = () => {
             <Input />
           </Form.Item>
           
-          <Form.Item
-            name="email"
-            label="Email"
-            rules={[{ type: 'email', message: 'Введите корректный email' }]}
-          >
+          <Form.Item name="email" label="Email" rules={[{ type: 'email', message: 'Введите корректный email' }]}>
             <Input />
           </Form.Item>
           
-          <Form.Item
-            name="company"
-            label="Компания"
-          >
+          <Form.Item name="company" label="Компания">
             <Input />
           </Form.Item>
           
-          <Form.Item
-            name="position"
-            label="Должность"
-          >
+          <Form.Item name="position" label="Должность">
             <Input />
           </Form.Item>
           
-          <Form.Item
-            name="birth_date"
-            label="Дата рождения"
-          >
+          <Form.Item name="birth_date" label="Дата рождения">
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
           
-          <Form.Item
-            name="status"
-            label="Статус"
-          >
+          <Form.Item name="status" label="Статус">
             <Select>
               <Option value="lead">Лид</Option>
               <Option value="active">Активный</Option>
@@ -410,10 +454,7 @@ const ClientList = () => {
             </Select>
           </Form.Item>
           
-          <Form.Item
-            name="comment"
-            label="Комментарий"
-          >
+          <Form.Item name="comment" label="Комментарий">
             <TextArea rows={3} />
           </Form.Item>
           
@@ -422,7 +463,10 @@ const ClientList = () => {
               <Button type="primary" htmlType="submit">
                 {editingClient ? 'Сохранить' : 'Добавить'}
               </Button>
-              <Button onClick={() => setModalVisible(false)}>
+              <Button onClick={() => {
+                setModalVisible(false)
+                form.resetFields()
+              }}>
                 Отмена
               </Button>
             </Space>
@@ -430,6 +474,160 @@ const ClientList = () => {
         </Form>
       </Modal>
 
+      {/* Модалка карточки клиента */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Avatar
+              src={getAvatarUrl(selectedClient?.avatar)}
+              icon={!selectedClient?.avatar && <UserOutlined />}
+              size={48}
+            />
+            <div>
+              <div style={{ fontSize: '18px', fontWeight: '600' }}>
+                {selectedClient?.first_name} {selectedClient?.last_name}
+              </div>
+              <div style={{ fontSize: '12px', color: '#999' }}>
+                {selectedClient?.company || 'Частное лицо'}
+              </div>
+            </div>
+            <div style={{ marginLeft: 'auto' }}>
+              <Tag color={statusMap[selectedClient?.status]?.color || 'default'}>
+                {statusMap[selectedClient?.status]?.text || selectedClient?.status}
+              </Tag>
+            </div>
+          </div>
+        }
+        open={cardModalVisible}
+        onCancel={() => {
+          setCardModalVisible(false)
+          setSelectedClient(null)
+        }}
+        footer={null}
+        width={900}
+        destroyOnClose
+      >
+        <Spin spinning={cardLoading}>
+          {selectedClient && (
+            <div>
+              <Row gutter={16}>
+                <Col span={24}>
+                  <Descriptions bordered column={2} size="small">
+                    <Descriptions.Item label="Телефон">
+                      <a href={`tel:${selectedClient.phone}`}>
+                        <PhoneOutlined /> {selectedClient.phone}
+                      </a>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Email">
+                      {selectedClient.email ? (
+                        <a href={`mailto:${selectedClient.email}`}>
+                          <MailOutlined /> {selectedClient.email}
+                        </a>
+                      ) : '—'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Компания">
+                      {selectedClient.company || '—'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Должность">
+                      {selectedClient.position || '—'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Дата рождения">
+                      {selectedClient.birth_date ? dayjs(selectedClient.birth_date).format('DD.MM.YYYY') : '—'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="В базе">
+                      {dayjs(selectedClient.created_at).format('DD.MM.YYYY')}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Комментарий" span={2}>
+                      {selectedClient.comment || 'Нет комментариев'}
+                    </Descriptions.Item>
+                  </Descriptions>
+                </Col>
+              </Row>
+
+              <Divider orientation="left">
+                <CalendarOutlined /> Запланированные события
+              </Divider>
+
+              {clientEvents.length > 0 ? (
+                <Timeline>
+                  {clientEvents.slice(0, 5).map(event => (
+                    <Timeline.Item key={event.id} color={event.is_completed ? 'green' : 'blue'}>
+                      <div>
+                        <div style={{ fontWeight: '500' }}>{event.title}</div>
+                        <div style={{ fontSize: '12px', color: '#999' }}>
+                          <ClockCircleOutlined /> {dayjs(event.scheduled_date).format('DD.MM.YYYY HH:mm')}
+                        </div>
+                        <Tag color={event.is_completed ? 'green' : 'blue'} size="small">
+                          {event.is_completed ? '✅ Выполнено' : '⏳ Ожидает'}
+                        </Tag>
+                        {event.description && (
+                          <div style={{ fontSize: '12px', marginTop: 4 }}>{event.description}</div>
+                        )}
+                      </div>
+                    </Timeline.Item>
+                  ))}
+                </Timeline>
+              ) : (
+                <div style={{ textAlign: 'center', padding: 20, color: '#999' }}>
+                  <CalendarOutlined style={{ fontSize: 32 }} />
+                  <div style={{ marginTop: 8 }}>Нет запланированных событий</div>
+                </div>
+              )}
+
+              <Divider />
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <Button
+                  type="primary"
+                  icon={<EditOutlined />}
+                  onClick={() => {
+                    setCardModalVisible(false)
+                    handleEdit(selectedClient)
+                  }}
+                >
+                  Редактировать
+                </Button>
+                <Button
+                  type="primary"
+                  ghost
+                  icon={<CalendarOutlined />}
+                  onClick={() => {
+                    message.info(`Планирование события для ${selectedClient.first_name}`)
+                    // TODO: Открыть модалку создания события
+                  }}
+                >
+                  Запланировать событие
+                </Button>
+                <Button
+                  icon={<CameraOutlined />}
+                  onClick={() => {
+                    setSelectedClient(selectedClient)
+                    setAvatarModalVisible(true)
+                  }}
+                >
+                  Сменить аватар
+                </Button>
+                <Popconfirm
+                  title="Удалить клиента?"
+                  description="Это действие нельзя отменить"
+                  onConfirm={() => {
+                    handleDelete(selectedClient.id)
+                    setCardModalVisible(false)
+                  }}
+                  okText="Да"
+                  cancelText="Нет"
+                >
+                  <Button danger icon={<DeleteOutlined />}>
+                    Удалить
+                  </Button>
+                </Popconfirm>
+              </div>
+            </div>
+          )}
+        </Spin>
+      </Modal>
+
+      {/* Модалка аватарки */}
       <Modal
         title={`Аватарка: ${selectedClient?.first_name} ${selectedClient?.last_name}`}
         open={avatarModalVisible}
