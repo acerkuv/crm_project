@@ -4,8 +4,8 @@ import MainLayout from './components/Layout/MainLayout'
 import Dashboard from './components/Dashboard/Dashboard'
 import ClientList from './components/Clients/ClientList'
 import Events from './components/Events/Events'
+import Statistics from './components/Statistics/Statistics'
 
-// Компонент логина (упрощенный)
 const Login = () => (
   <div style={{ 
     display: 'flex', 
@@ -22,9 +22,7 @@ const Login = () => (
       width: 400,
     }}>
       <h1 style={{ textAlign: 'center', marginBottom: 24 }}>🤗 CRM Уют</h1>
-      <p style={{ textAlign: 'center', color: '#999' }}>
-        Войдите с токеном из админки
-      </p>
+      <p style={{ textAlign: 'center', color: '#999' }}>Войдите с токеном из админки</p>
       <p style={{ 
         textAlign: 'center', 
         color: '#1890ff',
@@ -81,7 +79,7 @@ function App() {
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/clients" element={<ClientList />} />
                   <Route path="/events" element={<Events />} />
-                  <Route path="/statistics" element={<div style={{ padding: 24 }}>📊 Статистика (в разработке)</div>} />
+                  <Route path="/statistics" element={<Statistics />} />
                 </Routes>
               </MainLayout>
             </PrivateRoute>
