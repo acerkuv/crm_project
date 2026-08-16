@@ -26,9 +26,24 @@ import {
   UploadOutlined,
   CameraOutlined,
 } from '@ant-design/icons'
-import { clientsApi, tagsApi } from '../../api/client'
+import axios from 'axios'
 import dayjs from 'dayjs'
 import './Clients.css'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+// Создаем axios инстанс с токеном
+const api = axios.create({
+  baseURL: API_URL,
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Token ${token}`;
+  }
+  return config;
+});
 
 const { Option } = Select
 const { TextArea } = Input
@@ -61,10 +76,12 @@ const ClientList = () => {
   const fetchClients = async () => {
     try {
       setLoading(true)
-      const response = await clientsApi.list()
+      const response = await api.get('/api/clients/')
+      // ИСПРАВЛЕНО: берем results или сам массив
       const data = response.data.results || response.data || []
       setClients(data)
     } catch (error) {
+      console.error('Ошибка загрузки клиентов:', error)
       message.error('Ошибка загрузки клиентов')
     } finally {
       setLoading(false)
@@ -73,8 +90,9 @@ const ClientList = () => {
 
   const fetchTags = async () => {
     try {
-      const response = await tagsApi.list()
-      setTags(response.data.results || response.data || [])
+      const response = await api.get('/api/tags/')
+      const data = response.data.results || response.data || []
+      setTags(data)
     } catch (error) {
       console.error('Ошибка загрузки тегов:', error)
     }
@@ -82,11 +100,14 @@ const ClientList = () => {
 
   const handleSearch = (value) => {
     setSearchText(value)
-    clientsApi.list({ search: value }).then((res) => {
-      setClients(res.data.results || res.data || [])
-    }).catch(() => {
-      message.error('Ошибка поиска')
-    })
+    api.get('/api/clients/', { params: { search: value } })
+      .then((res) => {
+        const data = res.data.results || res.data || []
+        setClients(data)
+      })
+      .catch(() => {
+        message.error('Ошибка поиска')
+      })
   }
 
   const handleAdd = () => {
@@ -106,7 +127,7 @@ const ClientList = () => {
 
   const handleDelete = async (id) => {
     try {
-      await clientsApi.delete(id)
+      await api.delete(`/api/clients/${id}/`)
       message.success('Клиент удален')
       fetchClients()
     } catch (error) {
@@ -122,10 +143,10 @@ const ClientList = () => {
       }
       
       if (editingClient) {
-        await clientsApi.update(editingClient.id, data)
+        await api.put(`/api/clients/${editingClient.id}/`, data)
         message.success('Клиент обновлен')
       } else {
-        await clientsApi.create(data)
+        await api.post('/api/clients/', data)
         message.success('Клиент добавлен')
       }
       
@@ -133,6 +154,7 @@ const ClientList = () => {
       form.resetFields()
       fetchClients()
     } catch (error) {
+      console.error('Ошибка сохранения:', error)
       message.error('Ошибка сохранения')
     }
   }
@@ -142,11 +164,16 @@ const ClientList = () => {
     
     setUploading(true)
     try {
-      await clientsApi.uploadAvatar(selectedClient.id, file)
+      const formData = new FormData()
+      formData.append('avatar', file)
+      await api.patch(`/api/clients/${selectedClient.id}/upload_avatar/`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
       message.success('Аватарка обновлена')
       setAvatarModalVisible(false)
       fetchClients()
     } catch (error) {
+      console.error('Ошибка загрузки аватарки:', error)
       message.error('Ошибка загрузки аватарки')
     } finally {
       setUploading(false)
@@ -155,9 +182,7 @@ const ClientList = () => {
 
   const getAvatarUrl = (avatar) => {
     if (!avatar) return null
-    // Проверяем, является ли avatar URL
     if (avatar.startsWith('http')) return avatar
-    // Иначе формируем URL с учетом MEDIA_URL
     return `http://localhost:8000${avatar}`
   }
 
@@ -238,7 +263,7 @@ const ClientList = () => {
       render: (date) => {
         const days = dayjs().diff(dayjs(date), 'day')
         if (days < 1) return 'меньше дня'
-        if (days < 7) return `${days} дня`
+        if (days < 7) return `${days} дн.`
         if (days < 30) return `${Math.floor(days / 7)} нед.`
         if (days < 365) return `${Math.floor(days / 30)} мес.`
         return `${Math.floor(days / 365)} г.`
