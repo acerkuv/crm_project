@@ -162,3 +162,36 @@ Frontend	http://127.0.0.1:3001
 Admin	http://localhost:8000/admin
 API	http://localhost:8000/api/
 Flower	http://localhost:5555
+
+
+## TODO
+# Добавить поле user в модели
+class Client(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    # ... остальные поля
+
+class ScheduledEvent(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    # ... остальные поля
+
+# В views.py добавить фильтрацию по пользователю
+def get_queryset(self):
+    return super().get_queryset().filter(user=self.request.user)
+5. Telegram бот
+Привязка Telegram ID к пользователю
+
+Команда /register для регистрации
+
+📁 Структура завтрашних изменений:
+
+backend/apps/
+├── users/                 # Новое приложение
+│   ├── models.py         # Расширенная модель пользователя
+│   ├── views.py          # Регистрация через Telegram
+│   └── serializers.py
+├── clients/
+│   ├── models.py         # Добавить user = ForeignKey
+│   └── views.py          # Фильтрация по user
+└── events/
+    ├── models.py         # Добавить user = ForeignKey
+    └── views.py          # Фильтрация по user
