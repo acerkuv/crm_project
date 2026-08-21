@@ -2,7 +2,6 @@ from rest_framework import serializers
 from django.utils import timezone 
 from .models import Client, Tag, Interaction, ScheduledEvent
 
-
 class TagSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tag
@@ -15,10 +14,16 @@ class InteractionSerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at',)
 
 class ScheduledEventSerializer(serializers.ModelSerializer):
+    client_name = serializers.CharField(source='client.first_name', read_only=True)
+    client_full_name = serializers.SerializerMethodField()
+    
     class Meta:
         model = ScheduledEvent
         fields = '__all__'
-        read_only_fields = ('created_at',)
+        read_only_fields = ('created_at', 'user')
+    
+    def get_client_full_name(self, obj):
+        return f"{obj.client.first_name} {obj.client.last_name}".strip()
 
 class ClientSerializer(serializers.ModelSerializer):
     tags = TagSerializer(many=True, read_only=True)
@@ -29,7 +34,7 @@ class ClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Client
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at')
+        read_only_fields = ('created_at', 'updated_at', 'user')
     
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
@@ -42,16 +47,4 @@ class ClientSerializer(serializers.ModelSerializer):
         if next_birthday < today:
             next_birthday = next_birthday.replace(year=today.year + 1)
         return (next_birthday - today).days
-
-
-class ScheduledEventSerializer(serializers.ModelSerializer):
-    client_name = serializers.CharField(source='client.first_name', read_only=True)
-    client_full_name = serializers.SerializerMethodField()
     
-    class Meta:
-        model = ScheduledEvent
-        fields = '__all__'
-        read_only_fields = ('created_at',)
-    
-    def get_client_full_name(self, obj):
-        return f"{obj.client.first_name} {obj.client.last_name}".strip()

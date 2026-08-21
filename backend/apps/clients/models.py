@@ -83,6 +83,7 @@ class Interaction(models.Model):
 
 class ScheduledEvent(models.Model):
     """Запланированное событие для клиента"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='scheduled_events', null=True, blank=True)  # ДОБАВИТЬ ЭТО
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='scheduled_events')
     title = models.CharField('Заголовок', max_length=200)
     description = models.TextField('Описание', blank=True)

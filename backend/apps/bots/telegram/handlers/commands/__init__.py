@@ -6,3 +6,8 @@ from .add import handle as add
 from .find import handle as find
 from .birthdays import handle as birthdays
 from .plan import handle as plan
+from .id import handle as id
+from .register import handle as register
+from .login import handle as login
+from .login import handle as login
+from .login import handle as login

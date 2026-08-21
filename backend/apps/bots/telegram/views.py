@@ -17,6 +17,9 @@ from .handlers.commands import (
     find as cmd_find,
     birthdays as cmd_birthdays,
     plan as cmd_plan,
+    id as cmd_id, 
+    register as cmd_register, 
+    login as cmd_login,
 )
 
 # Импортируем обработчики callback'ов
@@ -244,6 +247,9 @@ def webhook(request):
                     '/find': cmd_find,
                     '/birthdays': cmd_birthdays,
                     '/plan': cmd_plan,
+                    '/id': cmd_id,
+                    '/register': cmd_register,
+                    '/login': cmd_login,
                 }
                 
                 if command in command_handlers:

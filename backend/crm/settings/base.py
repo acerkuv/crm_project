@@ -4,10 +4,15 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-key-change-in-production')
-
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
+# ALLOWED_HOSTS
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+# Добавляем ngrok хосты
+ALLOWED_HOSTS.extend([
+    'a7a9-194-58-37-17.ngrok-free.app',
+    '553e-194-58-37-17.ngrok-free.app',
+])
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -28,11 +33,12 @@ INSTALLED_APPS = [
     'apps.message_templates',
     'apps.bots',
     'apps.ai',
+    'apps.users',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # Должен быть первым!
     'django.middleware.security.SecurityMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -125,7 +131,13 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 20,
 }
 
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:8000').split(',')
+# CORS настройки
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:8000',
+    'http://localhost:3001',
+    'https://a7a9-194-58-37-17.ngrok-free.app',
+    'https://553e-194-58-37-17.ngrok-free.app',
+]
 CORS_ALLOW_CREDENTIALS = True
 
 LOGGING = {

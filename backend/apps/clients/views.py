@@ -7,18 +7,31 @@ from PIL import Image
 from io import BytesIO
 import os
 from django.conf import settings
-from .models import Client, Tag, Interaction, ScheduledEvent  # ДОБАВЛЯЕМ ScheduledEvent
-from .serializers import ClientSerializer, TagSerializer, InteractionSerializer, ScheduledEventSerializer  # ДОБАВЛЯЕМ ScheduledEventSerializer
+from .models import Client, Tag, Interaction, ScheduledEvent
+from .serializers import ClientSerializer, TagSerializer, InteractionSerializer, ScheduledEventSerializer
+from apps.users.decorators import check_subscription_limit
 
 class ClientViewSet(viewsets.ModelViewSet):
-    queryset = Client.objects.all()
     serializer_class = ClientSerializer
     permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Показываем только клиентов текущего пользователя"""
+        return Client.objects.filter(user=self.request.user)
+    
+    def perform_create(self, serializer):
+        """При создании автоматически добавляем пользователя"""
+        serializer.save(user=self.request.user)
     
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context.update({"request": self.request})
         return context
+    
+    @check_subscription_limit('clients')
+    def create(self, request, *args, **kwargs):
+        """Создание клиента с проверкой лимита"""
+        return super().create(request, *args, **kwargs)
     
     @action(detail=True, methods=['patch'], url_path='upload_avatar')
     def upload_avatar(self, request, pk=None):
@@ -90,19 +103,16 @@ class InteractionViewSet(viewsets.ModelViewSet):
     serializer_class = InteractionSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-# ===================== ДОБАВЛЯЕМ НОВЫЙ ViewSet =====================
-
 class ScheduledEventViewSet(viewsets.ModelViewSet):
     """
     API для работы с запланированными событиями
     """
-    queryset = ScheduledEvent.objects.all().order_by('scheduled_date')
     serializer_class = ScheduledEventSerializer
-    # permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        """Фильтрация событий по параметрам запроса"""
-        queryset = super().get_queryset()
+        """Показываем только события текущего пользователя"""
+        queryset = ScheduledEvent.objects.filter(user=self.request.user).order_by('scheduled_date')
         
         # Фильтр по статусу выполнения
         completed = self.request.query_params.get('completed')
@@ -133,6 +143,10 @@ class ScheduledEventViewSet(viewsets.ModelViewSet):
         
         return queryset
     
+    def perform_create(self, serializer):
+        """При создании автоматически добавляем пользователя"""
+        serializer.save(user=self.request.user)
+    
     @action(detail=True, methods=['post'], url_path='complete')
     def mark_complete(self, request, pk=None):
         """Отметить событие как выполненное"""
@@ -161,4 +175,8 @@ class ScheduledEventViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(event)
         return Response(serializer.data)
 
+    @check_subscription_limit('events')
+    def create(self, request, *args, **kwargs):
+        """Создание события с проверкой лимита"""
+        return super().create(request, *args, **kwargs)
     

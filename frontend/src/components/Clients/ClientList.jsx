@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import PlanEventModal from './PlanEventModal';
 import {
   Table,
   Button,
@@ -34,14 +35,11 @@ import {
   CalendarOutlined,
   PhoneOutlined,
   MailOutlined,
-  EnvironmentOutlined,  // вместо BuildingOutlined
   ClockCircleOutlined,
   CloseOutlined,
   CheckOutlined,
-  FileTextOutlined,
   TeamOutlined,
   StarOutlined,
-  HomeOutlined,  // вместо BuildingOutlined
 } from '@ant-design/icons'
 import axios from 'axios'
 import dayjs from 'dayjs'
@@ -79,6 +77,8 @@ const ClientList = () => {
   const [uploading, setUploading] = useState(false)
   const [cardLoading, setCardLoading] = useState(false)
   const [clientEvents, setClientEvents] = useState([])
+  const [planModalVisible, setPlanModalVisible] = useState(false);
+  const [planClient, setPlanClient] = useState(null);
 
   const statusMap = {
     vip: { color: 'gold', text: '⭐ VIP', icon: <StarOutlined /> },
@@ -87,6 +87,11 @@ const ClientList = () => {
     lead: { color: 'orange', text: '🆕 Лид', icon: <UserOutlined /> },
     inactive: { color: 'red', text: '⏸️ Неактивный', icon: <CloseOutlined /> },
   }
+
+  const handlePlanEvent = (client) => {
+    setPlanClient(client);
+    setPlanModalVisible(true);
+  };
 
   useEffect(() => {
     fetchClients()
@@ -238,15 +243,6 @@ const ClientList = () => {
     return `http://localhost:8000${avatar}`
   }
 
-  const handlePlanEvent = (client) => {
-    // Закрываем карточку и открываем создание события
-    setCardModalVisible(false)
-    // Перенаправляем на страницу событий с параметром клиента
-    // Или можно открыть модалку создания события прямо здесь
-    message.info(`Открыть планирование для ${client.first_name} ${client.last_name}`)
-    // TODO: Открыть модалку создания события с предзаполненным клиентом
-  }
-
   const columns = [
     {
       title: 'Аватар',
@@ -341,10 +337,12 @@ const ClientList = () => {
             <Button 
               type="primary" 
               ghost
-              icon={<CalendarOutlined />} 
+              icon={<CalendarOutlined />}
               size="small"
               onClick={() => handlePlanEvent(record)}
-            />
+            >
+              План
+            </Button>
           </Tooltip>
           <Popconfirm
             title="Удалить клиента?"
@@ -592,8 +590,8 @@ const ClientList = () => {
                   ghost
                   icon={<CalendarOutlined />}
                   onClick={() => {
-                    message.info(`Планирование события для ${selectedClient.first_name}`)
-                    // TODO: Открыть модалку создания события
+                    setCardModalVisible(false)
+                    handlePlanEvent(selectedClient)
                   }}
                 >
                   Запланировать событие
@@ -674,6 +672,23 @@ const ClientList = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Модалка планирования события */}
+      <PlanEventModal
+        visible={planModalVisible}
+        client={planClient}
+        onClose={() => {
+          setPlanModalVisible(false);
+          setPlanClient(null);
+        }}
+        onSuccess={() => {
+          if (cardModalVisible && selectedClient) {
+            fetchClientEvents(selectedClient.id);
+          }
+          message.success('Событие создано!');
+          fetchClients();
+        }}
+      />
     </div>
   )
 }

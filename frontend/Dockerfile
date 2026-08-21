@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
@@ -6,11 +6,12 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
+# Устанавливаем PWA плагин
+RUN npm install -D vite-plugin-pwa
+
 # Копируем исходники
 COPY . .
 
-# Открываем порт
 EXPOSE 3000
 
-# Запускаем в режиме разработки
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

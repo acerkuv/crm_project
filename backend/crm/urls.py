@@ -22,10 +22,11 @@ schema_view = get_schema_view(
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('apps.clients.urls')),
-    path('api/events/', include('apps.events.urls')),
+    path('api/', include('apps.events.urls')),
     path('api/', include('apps.message_templates.urls')),
     path('api/', include('apps.bots.urls')),
     path('api/', include('apps.ai.urls')),
+    path('api/users/', include('apps.users.urls')),  # ДОБАВИТЬ ЭТО
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]

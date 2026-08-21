@@ -61,4 +61,20 @@ export const statsApi = {
   get: () => api.get('/clients/'),
 }
 
+// ============ НОВЫЕ API ДЛЯ ПОЛЬЗОВАТЕЛЯ ============
+
+export const usersApi = {
+  // Получить профиль пользователя
+  getProfile: () => api.get('/users/profile/'),
+  
+  // Обновить профиль пользователя
+  updateProfile: (data) => api.patch('/users/profile/', data),
+  
+  // Получить статус подписки
+  getSubscription: () => api.get('/users/subscription/'),
+  
+  // Верифицировать код входа
+  verifyCode: (code) => api.post('/users/verify-code/', { code }),
+}
+
 export default api

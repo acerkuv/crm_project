@@ -1,0 +1,41 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block content %}
+<div style="padding: 20px;">
+    <h1>📊 Статистика подписок</h1>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0;">
+        <div style="background: #f0f5ff; padding: 20px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 36px; font-weight: bold; color: #1890ff;">{{ total_users }}</div>
+            <div style="color: #666;">Всего пользователей</div>
+        </div>
+        <div style="background: #f6ffed; padding: 20px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 36px; font-weight: bold; color: #52c41a;">{{ free_users }}</div>
+            <div style="color: #666;">Бесплатный тариф</div>
+        </div>
+        <div style="background: #e6f7ff; padding: 20px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 36px; font-weight: bold; color: #1890ff;">{{ basic_users }}</div>
+            <div style="color: #666;">Базовый тариф</div>
+        </div>
+        <div style="background: #fff7e6; padding: 20px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 36px; font-weight: bold; color: #faad14;">{{ pro_users }}</div>
+            <div style="color: #666;">Про тариф</div>
+        </div>
+        <div style="background: #f9f0ff; padding: 20px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 36px; font-weight: bold; color: #722ed1;">{{ enterprise_users }}</div>
+            <div style="color: #666;">Корпоративный</div>
+        </div>
+        <div style="background: #fff1f0; padding: 20px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 36px; font-weight: bold; color: #ff4d4f;">{{ expired_users }}</div>
+            <div style="color: #666;">Истекшие подписки</div>
+        </div>
+    </div>
+    
+    <div style="margin-top: 20px;">
+        <a href="{% url 'admin:users_telegramuser_changelist' %}" class="button" style="padding: 10px 20px; background: #1890ff; color: white; text-decoration: none; border-radius: 4px;">
+            ← Управление пользователями
+        </a>
+    </div>
+</div>
+{% endblock %}

@@ -52,6 +52,7 @@ services:
       - ../.env.dev
     environment:
       - DJANGO_SETTINGS_MODULE=crm.settings.development
+      - ALLOWED_HOSTS=localhost,127.0.0.1,553e-194-58-37-17.ngrok-free.app,a7a9-194-58-37-17.ngrok-free.app
     depends_on:
       db:
         condition: service_healthy
@@ -73,7 +74,10 @@ services:
       - /app/node_modules
     environment:
       - NODE_ENV=development
-      - VITE_API_URL=http://localhost:8000
+      - VITE_API_URL=https://553e-194-58-37-17.ngrok-free.app
+      - VITE_APP_URL=https://a7a9-194-58-37-17.ngrok-free.app
+    env_file:
+      - ../frontend/.env
     depends_on:
       - backend
     networks:
