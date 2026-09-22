@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# prepare_deploy.sh — подготовка архива для деплоя на домашний сервер
+# prepare_deploy.sh — подготовка архива для деплоя (Windows/Git Bash совместимо)
 # Запускать локально из корня проекта crm_project/
 
 set -euo pipefail
@@ -19,6 +19,7 @@ log()  { echo -e "${GREEN}[+]${NC} $*"; }
 warn() { echo -e "${YELLOW}[!]${NC} $*"; }
 err()  { echo -e "${RED}[x]${NC} $*" >&2; }
 
+# Проверка что мы в корне проекта
 if [[ ! -d "backend" || ! -d "docker" ]]; then
     err "Запусти скрипт из корня проекта (там где backend/ и docker/)"
 fi
@@ -27,47 +28,55 @@ log "Очистка временной папки..."
 rm -rf "${TMP_DIR}"
 mkdir -p "${TMP_DIR}/${PROJECT_NAME}"
 
-log "Копирование файлов проекта..."
+# Общие исключения для tar
+EXCLUDES=(
+    --exclude='__pycache__'
+    --exclude='*.pyc'
+    --exclude='*.pyo'
+    --exclude='.pytest_cache'
+    --exclude='.mypy_cache'
+    --exclude='*.sqlite3'
+    --exclude='.env'
+    --exclude='.env.*'
+    --exclude='venv'
+    --exclude='.venv'
+    --exclude='node_modules'
+    --exclude='.git'
+    --exclude='.idea'
+    --exclude='.vscode'
+    --exclude='.DS_Store'
+)
 
-# Backend (без мусора)
-rsync -a --exclude='__pycache__' \
-         --exclude='*.pyc' \
-         --exclude='*.pyo' \
-         --exclude='.pytest_cache' \
-         --exclude='.mypy_cache' \
-         --exclude='*.sqlite3' \
-         --exclude='.env' \
-         --exclude='.env.*' \
-         --exclude='media/*' \
-         --exclude='staticfiles/*' \
-         --exclude='venv' \
-         --exclude='.venv' \
-         backend/ "${TMP_DIR}/${PROJECT_NAME}/backend/"
+log "Копирование backend..."
+tar -cf - "${EXCLUDES[@]}" \
+    --exclude='media' \
+    --exclude='staticfiles' \
+    backend | tar -xf - -C "${TMP_DIR}/${PROJECT_NAME}/"
 
-# Docker
-rsync -a docker/ "${TMP_DIR}/${PROJECT_NAME}/docker/"
+log "Копирование docker..."
+cp -r docker "${TMP_DIR}/${PROJECT_NAME}/docker"
 
-# Nginx
-[[ -d nginx ]] && rsync -a nginx/ "${TMP_DIR}/${PROJECT_NAME}/nginx/"
-
-# Scripts
-[[ -d scripts ]] && rsync -a scripts/ "${TMP_DIR}/${PROJECT_NAME}/scripts/"
+[[ -d nginx ]] && { log "Копирование nginx..."; cp -r nginx "${TMP_DIR}/${PROJECT_NAME}/nginx"; }
+[[ -d scripts ]] && { log "Копирование scripts..."; cp -r scripts "${TMP_DIR}/${PROJECT_NAME}/scripts"; }
 
 # Frontend
 if [[ -d frontend/dist ]]; then
     log "Найден frontend/dist — копирую собранный фронт"
     mkdir -p "${TMP_DIR}/${PROJECT_NAME}/frontend"
-    rsync -a frontend/dist/ "${TMP_DIR}/${PROJECT_NAME}/frontend/dist/"
+    cp -r frontend/dist "${TMP_DIR}/${PROJECT_NAME}/frontend/dist"
 else
-    warn "frontend/dist не найден — копирую исходники frontend/"
-    rsync -a --exclude='node_modules' \
-             --exclude='dist' \
-             --exclude='.vite' \
-             frontend/ "${TMP_DIR}/${PROJECT_NAME}/frontend/"
+    warn "frontend/dist не найден — копирую исходники frontend/ (без node_modules)"
+    mkdir -p "${TMP_DIR}/${PROJECT_NAME}/frontend"
+    tar -cf - "${EXCLUDES[@]}" --exclude='dist' --exclude='.vite' \
+        -C frontend . | tar -xf - -C "${TMP_DIR}/${PROJECT_NAME}/frontend/"
 fi
 
 # Makefile
 [[ -f Makefile ]] && cp Makefile "${TMP_DIR}/${PROJECT_NAME}/"
+
+# Чистим возможные __pycache__, которые могли просочиться
+find "${TMP_DIR}/${PROJECT_NAME}" -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+find "${TMP_DIR}/${PROJECT_NAME}" -type f -name '*.pyc' -delete 2>/dev/null || true
 
 cat > "${TMP_DIR}/${PROJECT_NAME}/ENV_README.txt" <<'EOF'
 Файлы .env.dev и .env.prod НЕ входят в архив.
@@ -79,14 +88,19 @@ EOF
 log "Создание архива ${ARCHIVE_NAME}..."
 tar -czf "${ARCHIVE_NAME}" -C "${TMP_DIR}" "${PROJECT_NAME}"
 
-sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
+# sha256sum в Git Bash есть, но на всякий случай
+if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
+else
+    warn "sha256sum не найден — контрольная сумма не создана"
+fi
 
 rm -rf "${TMP_DIR}"
 
 ARCHIVE_SIZE=$(du -h "${ARCHIVE_NAME}" | cut -f1)
 log "Архив готов: ${ARCHIVE_NAME} (${ARCHIVE_SIZE})"
 
-# ============ ОПЦИОНАЛЬНО: сразу отправить на сервер ============
+# ============ Отправка на сервер ============
 read -r -p "Отправить архив на ${SERVER_USER}@${SERVER_HOST}? [y/N] " ANS
 if [[ "${ANS,,}" == "y" ]]; then
     log "Создаю папку на сервере (может потребоваться sudo-пароль)..."
@@ -94,11 +108,12 @@ if [[ "${ANS,,}" == "y" ]]; then
         "sudo mkdir -p ${SERVER_DIR}/releases && sudo chown -R ${SERVER_USER}:${SERVER_USER} ${SERVER_DIR}"
 
     log "Копирую архив..."
-    scp "${ARCHIVE_NAME}" "${ARCHIVE_NAME}.sha256" \
-        "${SERVER_USER}@${SERVER_HOST}:${SERVER_DIR}/releases/"
+    scp "${ARCHIVE_NAME}" "${SERVER_HOST}:${SERVER_DIR}/releases/"
+    [[ -f "${ARCHIVE_NAME}.sha256" ]] && \
+        scp "${ARCHIVE_NAME}.sha256" "${SERVER_HOST}:${SERVER_DIR}/releases/"
 
     log "Готово. Дальше на сервере:"
     echo "    ssh ${SERVER_USER}@${SERVER_HOST}"
     echo "    cd ${SERVER_DIR}"
-    echo "    ./deploy.sh ${ARCHIVE_NAME}"
-fi
+    echo "    ./deploy.sh releases/${ARCHIVE_NAME}"
+fis
