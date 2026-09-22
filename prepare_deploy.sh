@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # prepare_deploy.sh — подготовка архива для деплоя (Windows/Git Bash совместимо)
 # Запускать локально из корня проекта crm_project/
+#
+# ВАЖНО (один раз на сервере):
+#   ssh acerkuv@192.168.0.103
+#   sudo mkdir -p /opt/temp/crm_project/{releases,backups,shared}
+#   sudo chown -R acerkuv:acerkuv /opt/temp/crm_project
+#   exit
 
 set -euo pipefail
 
@@ -59,17 +65,11 @@ cp -r docker "${TMP_DIR}/${PROJECT_NAME}/docker"
 [[ -d nginx ]] && { log "Копирование nginx..."; cp -r nginx "${TMP_DIR}/${PROJECT_NAME}/nginx"; }
 [[ -d scripts ]] && { log "Копирование scripts..."; cp -r scripts "${TMP_DIR}/${PROJECT_NAME}/scripts"; }
 
-# Frontend
-if [[ -d frontend/dist ]]; then
-    log "Найден frontend/dist — копирую собранный фронт"
-    mkdir -p "${TMP_DIR}/${PROJECT_NAME}/frontend"
-    cp -r frontend/dist "${TMP_DIR}/${PROJECT_NAME}/frontend/dist"
-else
-    warn "frontend/dist не найден — копирую исходники frontend/ (без node_modules)"
-    mkdir -p "${TMP_DIR}/${PROJECT_NAME}/frontend"
-    tar -cf - "${EXCLUDES[@]}" --exclude='dist' --exclude='.vite' \
-        -C frontend . | tar -xf - -C "${TMP_DIR}/${PROJECT_NAME}/frontend/"
-fi
+# Frontend — всегда исходники, сервер сам соберёт (без node_modules/dist)
+log "Копирование frontend (исходники)..."
+mkdir -p "${TMP_DIR}/${PROJECT_NAME}/frontend"
+tar -cf - "${EXCLUDES[@]}" --exclude='dist' --exclude='.vite' \
+    -C frontend . | tar -xf - -C "${TMP_DIR}/${PROJECT_NAME}/frontend/"
 
 # Makefile
 [[ -f Makefile ]] && cp Makefile "${TMP_DIR}/${PROJECT_NAME}/"
@@ -88,7 +88,6 @@ EOF
 log "Создание архива ${ARCHIVE_NAME}..."
 tar -czf "${ARCHIVE_NAME}" -C "${TMP_DIR}" "${PROJECT_NAME}"
 
-# sha256sum в Git Bash есть, но на всякий случай
 if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
 else
@@ -103,17 +102,17 @@ log "Архив готов: ${ARCHIVE_NAME} (${ARCHIVE_SIZE})"
 # ============ Отправка на сервер ============
 read -r -p "Отправить архив на ${SERVER_USER}@${SERVER_HOST}? [y/N] " ANS
 if [[ "${ANS,,}" == "y" ]]; then
-    log "Создаю папку на сервере (может потребоваться sudo-пароль)..."
+    log "Проверяю папку на сервере..."
     ssh "${SERVER_USER}@${SERVER_HOST}" \
-        "sudo mkdir -p ${SERVER_DIR}/releases && sudo chown -R ${SERVER_USER}:${SERVER_USER} ${SERVER_DIR}"
+        "mkdir -p ${SERVER_DIR}/releases"
 
     log "Копирую архив..."
-    scp "${ARCHIVE_NAME}" "${SERVER_HOST}:${SERVER_DIR}/releases/"
+    scp "${ARCHIVE_NAME}" "${SERVER_USER}@${SERVER_HOST}:${SERVER_DIR}/releases/"
     [[ -f "${ARCHIVE_NAME}.sha256" ]] && \
-        scp "${ARCHIVE_NAME}.sha256" "${SERVER_HOST}:${SERVER_DIR}/releases/"
+        scp "${ARCHIVE_NAME}.sha256" "${SERVER_USER}@${SERVER_HOST}:${SERVER_DIR}/releases/"
 
     log "Готово. Дальше на сервере:"
     echo "    ssh ${SERVER_USER}@${SERVER_HOST}"
     echo "    cd ${SERVER_DIR}"
     echo "    ./deploy.sh releases/${ARCHIVE_NAME}"
-fis
+fi

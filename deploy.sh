@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # deploy.sh — развёртывание обновления на сервере
-# Запускать на сервере: ./deploy.sh crm_deploy_YYYYMMDD_HHMMSS.tar.gz
+# Запускать на сервере: ./deploy.sh releases/crm_deploy_YYYYMMDD_HHMMSS.tar.gz
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ CURRENT_LINK="${PROJECT_ROOT}/current"
 SHARED_DIR="${PROJECT_ROOT}/shared"
 
 COMPOSE_FILE="docker/docker-compose.production.yml"
-# Если у тебя один compose-файл — поменяй на docker/docker-compose.yml
+ENV_FILE_NAME=".env.prod"
 # ===================================
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
@@ -34,7 +34,6 @@ log "Обновление ${PROJECT_NAME}"
 log "Архив:    ${ARCHIVE}"
 log "Релиз:    ${NEW_RELEASE}"
 
-# Права на /opt/temp/crm_project — если создано через sudo, надо чтобы писалось от acerkuv
 if [[ ! -w "${PROJECT_ROOT}" ]]; then
     err "Нет прав на запись в ${PROJECT_ROOT}. Выполни:
     sudo mkdir -p ${PROJECT_ROOT}
@@ -43,14 +42,14 @@ fi
 
 mkdir -p "${RELEASES_DIR}" "${BACKUP_DIR}" "${SHARED_DIR}"
 
-# --- 1. Проверка контрольной суммы ---
+# --- 1. sha256 ---
 if [[ -f "${ARCHIVE}.sha256" ]]; then
     log "Проверка sha256..."
     ( cd "$(dirname "${ARCHIVE}")" && sha256sum -c "$(basename "${ARCHIVE}.sha256")" ) \
         || err "Контрольная сумма не совпала!"
 fi
 
-# --- 2. Бэкап текущего релиза ---
+# --- 2. Бэкап релиза ---
 if [[ -L "${CURRENT_LINK}" ]]; then
     CURRENT_REAL=$(readlink -f "${CURRENT_LINK}")
     log "Бэкап текущего релиза: ${CURRENT_REAL}"
@@ -69,12 +68,12 @@ if [[ -n "${DB_CONTAINER}" ]]; then
     gzip -f "${BACKUP_DIR}/db_${TIMESTAMP}.sql" || true
 fi
 
-# --- 4. Распаковка нового релиза ---
+# --- 4. Распаковка ---
 log "Распаковка в ${NEW_RELEASE}..."
 mkdir -p "${NEW_RELEASE}"
 tar -xzf "${ARCHIVE}" -C "${NEW_RELEASE}" --strip-components=1
 
-# --- 5. Линковка shared-каталогов ---
+# --- 5. Линковка shared ---
 log "Линковка shared-каталогов..."
 for envf in .env.dev .env.prod; do
     if [[ -f "${SHARED_DIR}/${envf}" ]]; then
@@ -93,13 +92,20 @@ for d in media staticfiles; do
     fi
 done
 
-# --- 6. Переключение current ---
+# --- 6. Симлинк .env для docker compose ---
+if [[ -f "${NEW_RELEASE}/${ENV_FILE_NAME}" ]]; then
+    log "Линкую ${ENV_FILE_NAME} для docker compose..."
+    ln -sfn "../${ENV_FILE_NAME}" "${NEW_RELEASE}/docker/.env"
+    ln -sfn "${ENV_FILE_NAME}" "${NEW_RELEASE}/.env"
+fi
+
+# --- 7. Переключение current ---
 log "Переключение ${CURRENT_LINK} -> ${NEW_RELEASE}"
 ln -sfn "${NEW_RELEASE}" "${CURRENT_LINK}"
 
 cd "${CURRENT_LINK}"
 
-# --- 7. Сборка и запуск ---
+# --- 8. Сборка и запуск ---
 log "Сборка образов..."
 docker compose -f "${COMPOSE_FILE}" build
 
@@ -109,8 +115,8 @@ docker compose -f "${COMPOSE_FILE}" down --remove-orphans || true
 log "Запуск новых..."
 docker compose -f "${COMPOSE_FILE}" up -d
 
-# --- 8. Миграции и статика ---
-log "Ожидание backend..."
+# --- 9. Миграции и статика ---
+log "Ожидание backend (8 сек)..."
 sleep 8
 
 log "Миграции..."
@@ -121,7 +127,7 @@ log "Сбор статики..."
 docker compose -f "${COMPOSE_FILE}" exec -T backend python manage.py collectstatic --noinput || \
     warn "collectstatic не прошёл"
 
-# --- 9. Чистка старых релизов/бэкапов ---
+# --- 10. Чистка ---
 log "Очистка старых релизов (оставляю 5)..."
 ls -1dt "${RELEASES_DIR}"/*/ 2>/dev/null | tail -n +6 | xargs -r rm -rf
 
@@ -129,7 +135,7 @@ log "Очистка старых бэкапов (оставляю 10)..."
 ls -1t "${BACKUP_DIR}"/*.tar.gz 2>/dev/null | tail -n +11 | xargs -r rm -f
 ls -1t "${BACKUP_DIR}"/*.sql.gz  2>/dev/null | tail -n +11 | xargs -r rm -f
 
-# --- 10. Статус ---
+# --- 11. Статус ---
 echo
 log "Статус контейнеров:"
 docker compose -f "${COMPOSE_FILE}" ps
@@ -137,6 +143,6 @@ docker compose -f "${COMPOSE_FILE}" ps
 echo
 log "✅ Деплой завершён: ${NEW_RELEASE}"
 echo "   Frontend: http://192.168.0.103:3001"
-echo "   Admin:    http://192.168.0.103:8000/admin/"
-echo "   API:      http://192.168.0.103:8000/api/"
+echo "   Admin:    http://192.168.0.103:3001/admin/"
+echo "   API:      http://192.168.0.103:3001/api/"
 echo "   Flower:   http://192.168.0.103:5555"
