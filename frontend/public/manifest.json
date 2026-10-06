@@ -1,0 +1,16 @@
+{
+  "name": "CRM Уют",
+  "short_name": "CRM Уют",
+  "description": "Умная CRM система для управления клиентами",
+  "theme_color": "#1890ff",
+  "background_color": "#f0f2f5",
+  "display": "standalone",
+  "start_url": "/login",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

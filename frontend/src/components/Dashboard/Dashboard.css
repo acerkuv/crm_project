@@ -1,0 +1,21 @@
+.dashboard {
+  padding: 0;
+}
+
+.dashboard .ant-statistic-title {
+  font-size: 14px;
+}
+
+.dashboard .ant-card {
+  border-radius: 12px;
+}
+
+.dashboard .ant-card .ant-card-head {
+  border-bottom: none;
+}
+
+@media (max-width: 768px) {
+  .dashboard .ant-col {
+    margin-bottom: 16px;
+  }
+}

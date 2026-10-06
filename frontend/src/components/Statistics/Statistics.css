@@ -1,0 +1,38 @@
+.statistics-page {
+  padding: 0;
+}
+
+.statistics-page .ant-statistic-title {
+  font-size: 14px;
+  color: #8c8c8c;
+}
+
+.statistics-page .ant-card {
+  border-radius: 12px;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+}
+
+.statistics-page .ant-card .ant-card-head {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.statistics-page .ant-card .ant-card-head-title {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.statistics-page .recharts-wrapper {
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .statistics-page .ant-col {
+    margin-bottom: 16px;
+  }
+  
+  .statistics-page .recharts-wrapper {
+    width: 100% !important;
+    height: 250px !important;
+  }
+}

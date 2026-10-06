@@ -1,0 +1,11 @@
+# Полный деплой
+./scripts/deploy-to-server.sh
+
+# Обновление только бекенда
+./scripts/update-server.sh
+
+# Проверка статуса на сервере
+ssh root@your-server.com "cd /opt/crm && docker-compose -f docker-compose.production.yml ps"
+
+# Логи на сервере
+ssh root@your-server.com "cd /opt/crm && docker-compose -f docker-compose.production.yml logs -f"

@@ -1,0 +1,178 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: crm_db_prod
+    restart: always
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-crm_db}
+      - POSTGRES_USER=${POSTGRES_USER:-crm_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - crm_network_prod
+
+  redis:
+    image: redis:7-alpine
+    container_name: crm_redis_prod
+    restart: always
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data_prod:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--pass", "${REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - crm_network_prod
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.prod
+    image: crm_backend_prod:latest
+    container_name: crm_backend_prod
+    restart: always
+    command: gunicorn crm.wsgi:application --bind 0.0.0.0:8000 --workers 4 --threads 2 --timeout 120 --access-logfile -
+    volumes:
+      - static_volume_prod:/app/static
+      - media_volume_prod:/app/media
+    env_file:
+      - ../.env.prod
+    environment:
+      - DJANGO_SETTINGS_MODULE=crm.settings.production
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - crm_network_prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile.prod
+    image: crm_frontend_prod:latest
+    container_name: crm_frontend_prod
+    restart: always
+    volumes:
+      - static_volume_prod:/app/static:ro
+      - media_volume_prod:/app/media:ro
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+    networks:
+      - crm_network_prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  celery:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.prod
+    image: crm_celery_prod:latest
+    container_name: crm_celery_prod
+    restart: always
+    command: celery -A crm worker -l info --concurrency=4
+    volumes:
+      - media_volume_prod:/app/media
+    env_file:
+      - ../.env.prod
+    environment:
+      - DJANGO_SETTINGS_MODULE=crm.settings.production
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - crm_network_prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  celery-beat:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.prod
+    image: crm_celery_beat_prod:latest
+    container_name: crm_celery_beat_prod
+    restart: always
+    command: celery -A crm beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    env_file:
+      - ../.env.prod
+    environment:
+      - DJANGO_SETTINGS_MODULE=crm.settings.production
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - crm_network_prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  flower:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.prod
+    image: crm_flower_prod:latest
+    container_name: crm_flower_prod
+    restart: always
+    command: celery -A crm flower --port=5555 --address=0.0.0.0 --basic_auth=${FLOWER_USER}:${FLOWER_PASSWORD}
+    ports:
+      - "5555:5555"
+    env_file:
+      - ../.env.prod
+    environment:
+      - DJANGO_SETTINGS_MODULE=crm.settings.production
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - celery
+      - redis
+    networks:
+      - crm_network_prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data_prod:
+    driver: local
+  redis_data_prod:
+    driver: local
+  static_volume_prod:
+    driver: local
+  media_volume_prod:
+    driver: local
+
+networks:
+  crm_network_prod:
+    driver: bridge
