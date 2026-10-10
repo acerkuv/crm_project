@@ -39,3 +39,9 @@ frontend/.vite/
 *.bak
 *.broken
 *.old
+
+# Deploy artifacts
+crm_deploy_*.tar.gz
+crm_deploy_*.tar.gz.sha256
+.deploy_tmp/
+prod_snapshot_*.tar.gz
