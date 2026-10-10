@@ -71,7 +71,10 @@ services:
     volumes:
       - static_volume_prod:/app/static:ro
       - media_volume_prod:/app/media:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     ports:
+      - "80:80"
+      - "443:443"
       - "3001:80"
     depends_on:
       - backend
