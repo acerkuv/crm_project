@@ -559,12 +559,18 @@ class TelegramBot:
     # ============ ЗАПУСК БОТА ============
 
     def run_polling(self):
-        """Запуск бота в режиме long-polling"""
         from telegram.ext import Application
+        import os
 
         logger.info("🚀 Запуск бота в режиме polling...")
 
-        app = Application.builder().token(self.token).build()
+        proxy_url = os.environ.get('TELEGRAM_PROXY_URL', '')
+        builder = Application.builder().token(self.token)
+        if proxy_url:
+            logger.info(f"🔗 Использую прокси: {proxy_url}")
+            builder = builder.proxy(proxy_url).get_updates_proxy(proxy_url)
+
+        app = builder.build()
 
         # Команды
         app.add_handler(CommandHandler("start", self.start))
@@ -644,4 +650,3 @@ async def send_telegram_message(chat_id, text):
         })
     except Exception as e:
         logger.error(f"Ошибка отправки: {e}")
-        
