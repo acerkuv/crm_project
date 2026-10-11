@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
     ENTERING_BIRTHDAY_MESSAGE,
 ) = range(7)
 
+
 class TelegramBot:
     def __init__(self):
         self.token = settings.TELEGRAM_BOT_TOKEN
@@ -95,9 +96,8 @@ class TelegramBot:
                 message += f"   🏢 {client.company}\n"
             message += "\n"
         
-        # Добавляем интерактивные кнопки для каждого клиента
         keyboard = []
-        for i, client in enumerate(clients[:5], 1):  # Показываем только 5 кнопок
+        for i, client in enumerate(clients[:5], 1):
             keyboard.append([
                 InlineKeyboardButton(
                     f"📌 {client.first_name} {client.last_name}", 
@@ -138,7 +138,6 @@ class TelegramBot:
     # ============ РАБОТА С КЛИЕНТОМ ============
     
     async def show_client_actions(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id):
-        """Показывает действия для конкретного клиента"""
         try:
             client = Client.objects.get(id=client_id)
         except Client.DoesNotExist:
@@ -148,7 +147,6 @@ class TelegramBot:
         query = update.callback_query
         await query.answer()
         
-        # Формируем информацию о клиенте
         status_emoji = {'vip': '⭐', 'active': '✅', 'regular': '🔄', 'lead': '🆕', 'inactive': '⏸️'}.get(client.status, '📌')
         message = f"{status_emoji} *{client.first_name} {client.last_name}*\n\n"
         message += f"📞 {client.phone}\n"
@@ -160,7 +158,6 @@ class TelegramBot:
             message += f"📝 {client.comment[:100]}...\n"
         message += f"📅 В базе: {(timezone.now() - client.created_at).days} дн."
         
-        # Кнопки действий
         keyboard = [
             [
                 InlineKeyboardButton("📞 Позвонить", callback_data=f"action_{client.id}_call"),
@@ -187,23 +184,19 @@ class TelegramBot:
             reply_markup=reply_markup
         )
         
-        # Сохраняем ID клиента в контекст
         context.user_data['selected_client_id'] = client_id
     
     # ============ FSM: ПЛАНИРОВАНИЕ СОБЫТИЙ ============
     
     async def start_event_planning(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id, action_type):
-        """Начинает процесс планирования события"""
         query = update.callback_query
         await query.answer()
         
         context.user_data['planning_client_id'] = client_id
         context.user_data['planning_action_type'] = action_type
         
-        # Получаем клиента
         client = Client.objects.get(id=client_id)
         
-        # Спрашиваем описание
         action_names = {
             'call': 'звонок',
             'message': 'сообщение',
@@ -214,7 +207,6 @@ class TelegramBot:
         }
         
         if action_type == 'birthday' and client.birth_date:
-            # Если день рождения известен, предлагаем автоматически
             keyboard = [
                 [InlineKeyboardButton("🎂 Поздравить автоматически", callback_data="birthday_auto")],
                 [InlineKeyboardButton("✍️ Написать самому", callback_data="birthday_manual")],
@@ -236,7 +228,6 @@ class TelegramBot:
         return ConversationHandler.END
     
     async def handle_birthday_choice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработка выбора способа поздравления"""
         query = update.callback_query
         await query.answer()
         
@@ -244,17 +235,14 @@ class TelegramBot:
         client = Client.objects.get(id=client_id)
         
         if query.data == 'birthday_auto':
-            # Генерируем поздравление через ИИ
             await query.edit_message_text(
                 f"🤖 *Генерация поздравления для {client.first_name}...*\n\n"
                 "Искусственный интеллект создает персонализированное поздравление...\n"
                 "Пожалуйста, подождите ⏳"
             )
             
-            # Генерируем поздравление
             greeting = await self.generate_ai_greeting(client)
             
-            # Сохраняем событие
             scheduled_date = client.birth_date.replace(year=timezone.now().year)
             if scheduled_date < timezone.now().date():
                 scheduled_date = scheduled_date.replace(year=timezone.now().year + 1)
@@ -299,12 +287,10 @@ class TelegramBot:
         return ConversationHandler.END
     
     async def save_birthday_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Сохраняет текст поздравления от пользователя"""
         text = update.message.text
         client_id = context.user_data.get('planning_client_id')
         client = Client.objects.get(id=client_id)
         
-        # Сохраняем событие
         scheduled_date = client.birth_date.replace(year=timezone.now().year)
         if scheduled_date < timezone.now().date():
             scheduled_date = scheduled_date.replace(year=timezone.now().year + 1)
@@ -338,7 +324,6 @@ class TelegramBot:
         context.user_data['awaiting_birthday_text'] = False
     
     async def handle_birthday_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработка действий с поздравлением"""
         query = update.callback_query
         await query.answer()
         
@@ -346,7 +331,6 @@ class TelegramBot:
         event = ScheduledEvent.objects.get(id=event_id)
         
         if query.data.startswith('send_birthday'):
-            # Отправляем сейчас
             if event.client.telegram_id:
                 await send_telegram_message(
                     event.client.telegram_id,
@@ -370,9 +354,7 @@ class TelegramBot:
             )
     
     async def generate_ai_greeting(self, client):
-        """Генерация поздравления через ИИ"""
         try:
-            # Используем OpenAI если настроен
             if settings.OPENAI_API_KEY:
                 import openai
                 openai.api_key = settings.OPENAI_API_KEY
@@ -399,23 +381,19 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Ошибка генерации ИИ: {e}")
         
-        # Запасной вариант
         return f"🎉 Дорогой(ая) {client.first_name}! Поздравляю с днём рождения! Желаю счастья, здоровья и успехов во всех начинаниях! 🎂"
     
     # ============ ОБРАБОТЧИКИ КНОПОК ============
     
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Главный обработчик всех кнопок"""
         query = update.callback_query
         data = query.data
         
-        # Обработка выбора клиента
         if data.startswith('client_'):
             client_id = int(data.split('_')[1])
             await self.show_client_actions(update, context, client_id)
             return
         
-        # Обработка действий с клиентом
         if data.startswith('action_'):
             parts = data.split('_')
             client_id = int(parts[1])
@@ -423,22 +401,18 @@ class TelegramBot:
             await self.start_event_planning(update, context, client_id, action_type)
             return
         
-        # Обработка выбора способа поздравления
         if data in ['birthday_auto', 'birthday_manual']:
             await self.handle_birthday_choice(update, context)
             return
         
-        # Обработка действий с поздравлением
         if data.startswith('send_birthday_') or data.startswith('schedule_birthday_'):
             await self.handle_birthday_action(update, context)
             return
         
-        # Назад к списку
         if data == 'back_to_list':
             await self.list_clients(update, context)
             return
         
-        # Все клиенты
         if data == 'list_all':
             await self.list_clients(update, context)
             return
@@ -582,6 +556,41 @@ class TelegramBot:
         else:
             await update.message.reply_text("❌ Клиент не найден")
 
+    # ============ ЗАПУСК БОТА ============
+
+    def run_polling(self):
+        """Запуск бота в режиме long-polling"""
+        from telegram.ext import Application
+
+        logger.info("🚀 Запуск бота в режиме polling...")
+
+        app = Application.builder().token(self.token).build()
+
+        # Команды
+        app.add_handler(CommandHandler("start", self.start))
+        app.add_handler(CommandHandler("help", self.help))
+        app.add_handler(CommandHandler("list", self.list_clients))
+        app.add_handler(CommandHandler("find", self.find))
+        app.add_handler(CommandHandler("events", self.events))
+        app.add_handler(CommandHandler("birthdays", self.birthdays))
+        app.add_handler(CommandHandler("stats", self.stats))
+        app.add_handler(CommandHandler("add", self.add))
+        app.add_handler(CommandHandler("avatar", self.avatar))
+
+        # Callback-кнопки
+        app.add_handler(CallbackQueryHandler(self.button_handler))
+
+        # Контакты
+        app.add_handler(MessageHandler(filters.CONTACT, self.handle_contact))
+
+        # Текстовые сообщения
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
+
+        logger.info("✅ Бот запущен, начинаю polling...")
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+# ============ МОДУЛЬНЫЕ ФУНКЦИИ ============
 
 async def show_client_options(update, context, client):
     """Показывает опции для клиента"""
@@ -635,3 +644,4 @@ async def send_telegram_message(chat_id, text):
         })
     except Exception as e:
         logger.error(f"Ошибка отправки: {e}")
+        

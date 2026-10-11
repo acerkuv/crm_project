@@ -100,6 +100,32 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  bot:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.prod
+    image: crm_bot_prod:latest
+    container_name: crm_bot_prod
+    restart: always
+    command: python manage.py run_bot
+    env_file:
+      - ../.env.prod
+    environment:
+      - DJANGO_SETTINGS_MODULE=crm.settings.production
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - crm_network_prod
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   celery:
     build:
       context: ../backend
