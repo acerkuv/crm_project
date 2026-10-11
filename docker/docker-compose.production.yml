@@ -87,18 +87,13 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: crm_cloudflared
     restart: always
-    command: tunnel --no-autoupdate run
+    command: tunnel --no-autoupdate --protocol http2 run
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     networks:
       - crm_network_prod
     depends_on:
       - frontend
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   celery:
     build:
