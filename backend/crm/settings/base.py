@@ -173,3 +173,4 @@ LOGGING = {
 # ============ Telegram Bot ============
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_WEBHOOK_URL = os.environ.get('TELEGRAM_WEBHOOK_URL', '')
+GIGACHAT_AUTH_KEY = os.environ.get('GIGACHAT_AUTH_KEY', '')
