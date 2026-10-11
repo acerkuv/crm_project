@@ -499,10 +499,9 @@ class TelegramBot:
 
     async def _recognize_business_card(self, image_path: str) -> dict:
         """Распознать визитку через GigaChat."""
-        from openai import AsyncOpenAI
         import httpx
 
-        # 1. Получаем токен доступа из ключа авторизации
+        # 1. Получаем токен доступа
         async with httpx.AsyncClient(verify=False) as http:
             resp = await http.post(
                 "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
@@ -516,39 +515,53 @@ class TelegramBot:
             )
             access_token = resp.json()["access_token"]
 
-        # 2. Вызываем GigaChat через OpenAI SDK
-        client = AsyncOpenAI(
-            api_key=access_token,
-            base_url="https://api.giga.chat/v1",
-            http_client=httpx.AsyncClient(verify=False),  # отключаем проверку SSL
-        )
+        headers = {"Authorization": f"Bearer {access_token}"}
 
-        with open(image_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
+        async with httpx.AsyncClient(verify=False, timeout=60) as http:
+            # 2. Загружаем файл
+            with open(image_path, "rb") as f:
+                files = {"file": ("card.jpg", f, "image/jpeg")}
+                upload = await http.post(
+                    "https://gigachat.devices.sberbank.ru/api/v1/files",
+                    headers=headers,
+                    files=files,
+                    data={"purpose": "general"},
+                )
+            upload.raise_for_status()
+            file_id = upload.json()["id"]
 
-        response = await client.chat.completions.create(
-            model="GigaChat-2-Max",  # или GigaChat-Max
-            messages=[{
-                "role": "user",
-                "content": [
+            # 3. Отправляем чат-запрос с attachments
+            payload = {
+                "model": "GigaChat-2-Max",
+                "messages": [
                     {
-                        "type": "text",
-                        "text": (
-                            "Распознай данные с визитки. Верни ТОЛЬКО JSON:\n"
+                        "role": "user",
+                        "content": (
+                            "Распознай данные с визитки. Верни ТОЛЬКО JSON без пояснений:\n"
                             '{"first_name": "", "last_name": "", "phone": "", '
                             '"email": "", "company": "", "position": ""}'
                         ),
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{image_data}"},
-                    },
+                        "attachments": [file_id],
+                    }
                 ],
-            }],
-            max_tokens=500,
-        )
+            }
+            chat = await http.post(
+                "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
+                headers={**headers, "Content-Type": "application/json"},
+                json=payload,
+            )
+            chat.raise_for_status()
+            content = chat.json()["choices"][0]["message"]["content"]
 
-        return json.loads(response.choices[0].message.content)
+        # 4. Чистим возможные ```json ... ``` обёртки
+        content = content.strip()
+        if content.startswith("```"):
+            content = content.strip("`")
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.strip()
+
+        return json.loads(content)
 
     async def handle_save_contact(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Сохранение распознанного контакта."""
