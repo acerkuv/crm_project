@@ -568,7 +568,7 @@ class TelegramBot:
         builder = Application.builder().token(self.token)
         if proxy_url:
             logger.info(f"🔗 Использую прокси: {proxy_url}")
-            builder = builder.proxy(proxy_url).get_updates_proxy(proxy_url)
+            builder = builder.proxy_url(proxy_url).get_updates_proxy_url(proxy_url)
 
         app = builder.build()
 
