@@ -10,7 +10,7 @@ psycopg2-binary==2.9.9
 celery==5.3.4
 redis==5.0.1
 gunicorn==21.2.0
-python-telegram-bot==20.6
+python-telegram-bot[socks]==20.6
 python-dotenv==1.0.0
 Pillow==10.1.0
 qrcode==7.4.2
