@@ -24,7 +24,35 @@ from apps.events.models import Event
 from datetime import datetime, timedelta
 import requests
 import json as json_lib
-import uuid  
+import uuid
+
+# Импорты клавиатур и утилит для FSM
+from apps.bots.telegram.keyboards import (
+    get_main_menu_keyboard,
+    get_main_reply_keyboard,
+    get_cancel_reply_keyboard,
+    get_letters_keyboard,
+    get_plan_action_keyboard,
+    get_client_full_actions_keyboard,
+    get_client_compact_keyboard,
+    get_months_keyboard,
+    get_days_keyboard,
+    get_hours_keyboard,
+    get_minutes_keyboard,
+    get_events_calendar_keyboard,
+    get_event_day_keyboard,
+    get_event_list_keyboard,
+    get_event_time_list_keyboard,
+    MONTHS_RU,
+)
+from apps.bots.telegram.time_utils import (
+    USER_TIMEZONE,
+    to_user_time,
+    format_user_time,
+    create_user_datetime,
+)
+from apps.bots.telegram.utils import get_client_card, get_clients_list_message, NGROK_URL
+from django.db.models import Q
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +77,7 @@ logger = logging.getLogger(__name__)
 class TelegramBot:
     def __init__(self):
         self.token = settings.TELEGRAM_BOT_TOKEN
-        logger.info(f"🤖 Бот инициализирован")
+        logger.info("🤖 Бот инициализирован")
 
     # ============ ХЭНДЛЕРЫ КОМАНД ============
 
@@ -431,8 +459,6 @@ class TelegramBot:
 
     async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка фото — распознавание визитки или аватарки."""
-        from asgiref.sync import sync_to_async
-
         # Если ожидаем аватарку для клиента
         if context.user_data.get('avatar_client_id'):
             await self._save_avatar(update, context)
@@ -575,7 +601,6 @@ class TelegramBot:
             await query.edit_message_text("❌ Данные потеряны, попробуйте снова.")
             return
 
-        # Ищем по телефону или email
         phone = data.get('phone', '').strip()
         email = data.get('email', '').strip()
 
@@ -593,7 +618,6 @@ class TelegramBot:
         existing = await sync_to_async(_find_existing)()
 
         if existing:
-            # Обновляем
             for field in ['first_name', 'last_name', 'email', 'company', 'position']:
                 if data.get(field):
                     setattr(existing, field, data[field])
@@ -604,7 +628,6 @@ class TelegramBot:
                 f"📞 {existing.phone}"
             )
         else:
-            # Создаём нового
             client = await sync_to_async(Client.objects.create)(
                 first_name=data.get('first_name', '') or 'Без имени',
                 last_name=data.get('last_name', ''),
@@ -697,7 +720,6 @@ class TelegramBot:
                 fail_silently=False,
             )
 
-            # Сохраняем Interaction
             await sync_to_async(Interaction.objects.create)(
                 client=client,
                 type='email',
@@ -717,7 +739,59 @@ class TelegramBot:
 
         context.user_data.pop('awaiting_email', None)
 
-    # ============ ЗВОНКИ ============
+    # ============ АВАТАРКИ ============
+
+    async def avatar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        from asgiref.sync import sync_to_async
+
+        search_query = ' '.join(context.args) if context.args else ''
+        if not search_query:
+            await update.message.reply_text("📷 Используйте: /avatar [имя или телефон]")
+            return
+
+        def _find():
+            return list(
+                Client.objects.filter(first_name__icontains=search_query)
+                | Client.objects.filter(last_name__icontains=search_query)
+                | Client.objects.filter(phone__icontains=search_query)
+            )
+
+        clients = await sync_to_async(_find)()
+
+        if clients:
+            context.user_data['avatar_client_id'] = clients[0].id
+            await update.message.reply_text(
+                f"📷 Найден клиент: {clients[0].first_name} {clients[0].last_name}\n"
+                "Отправьте фото для этого клиента"
+            )
+        else:
+            await update.message.reply_text("❌ Клиент не найден")
+
+    async def _save_avatar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Сохранение аватарки клиента."""
+        from asgiref.sync import sync_to_async
+
+        client_id = context.user_data.pop('avatar_client_id', None)
+        if not client_id:
+            return
+
+        photo = update.message.photo[-1]
+        file = await photo.get_file()
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+            await file.download_to_drive(tmp.name)
+
+            client = await sync_to_async(Client.objects.get)(id=client_id)
+            from django.core.files import File
+            with open(tmp.name, 'rb') as f:
+                client.avatar.save(f'avatar_{client_id}.jpg', File(f), save=True)
+
+            os.unlink(tmp.name)
+
+        await update.message.reply_text(
+            f"✅ Аватарка сохранена для {client.first_name} {client.last_name}"
+        )
+            # ============ ЗВОНКИ ============
 
     async def handle_call_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Отправка контакта для кликабельного звонка."""
@@ -749,36 +823,506 @@ class TelegramBot:
             last_name=client.last_name or '',
         )
 
+    # ============ НОВЫЕ МЕТОДЫ: СПИСОК, КАРТОЧКИ, МЕНЮ ============
+
+    async def _handle_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Главное меню."""
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text(
+            "🏠 *Главное меню*\n\nВыберите действие:",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton("📋 Список клиентов", callback_data="back_to_list"),
+                 InlineKeyboardButton("📊 Статистика", callback_data="show_stats")],
+                [InlineKeyboardButton("🎂 Дни рождения", callback_data="show_birthdays"),
+                 InlineKeyboardButton("📅 События", callback_data="show_events_calendar")],
+                [InlineKeyboardButton("🔍 Поиск", callback_data="find_client"),
+                 InlineKeyboardButton("➕ Добавить", callback_data="add_client")],
+                [InlineKeyboardButton("❓ Помощь", callback_data="show_help")],
+            ])
+        )
+
+    async def _handle_back_to_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Возврат к списку клиентов (страница 1)."""
+        from asgiref.sync import sync_to_async
+
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return list(Client.objects.all().order_by('-created_at'))
+
+        clients = await sync_to_async(_get)()
+        message_text, keyboard = get_clients_list_message(clients, 1)
+
+        try:
+            await query.edit_message_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"Ошибка редактирования списка: {e}")
+            await query.message.reply_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
+
+    async def _handle_list_page(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int):
+        """Пагинация списка клиентов."""
+        from asgiref.sync import sync_to_async
+
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return list(Client.objects.all().order_by('-created_at'))
+
+        clients = await sync_to_async(_get)()
+        message_text, keyboard = get_clients_list_message(clients, page)
+        await query.edit_message_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
+
+    async def _handle_list_letter(self, update: Update, context: ContextTypes.DEFAULT_TYPE, letter: str):
+        """Фильтр списка по первой букве."""
+        from asgiref.sync import sync_to_async
+
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return list(Client.objects.filter(
+                Q(first_name__istartswith=letter) | Q(last_name__istartswith=letter)
+            ).order_by('first_name'))
+
+        clients = await sync_to_async(_get)()
+        if not clients:
+            await query.edit_message_text(f"📭 Нет клиентов на букву '{letter}'")
+            return
+
+        message_text, keyboard = get_clients_list_message(clients, 1)
+        header = f"📋 *Клиенты на букву '{letter}'* (всего {len(clients)})\n\n"
+        if '\n\n' in message_text:
+            message_text = header + message_text.split('\n\n', 1)[1]
+        else:
+            message_text = header + message_text
+        await query.edit_message_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
+
+    async def _handle_client_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
+        """Полная карточка клиента с аватаркой (если есть)."""
+        from asgiref.sync import sync_to_async
+
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return Client.objects.filter(id=client_id).first()
+
+        client = await sync_to_async(_get)()
+        if not client:
+            await query.edit_message_text("❌ Клиент не найден")
+            return
+
+        card_text = get_client_card(client, show_avatar=False) + "\n\n_Выберите действие:_"
+        keyboard = get_client_full_actions_keyboard(client.id)
+
+        if client.avatar and client.avatar.name:
+            avatar_url = f"{NGROK_URL}{client.avatar.url}"
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            try:
+                await query.message.chat.send_photo(
+                    photo=avatar_url,
+                    caption=card_text,
+                    parse_mode='Markdown',
+                    reply_markup=keyboard,
+                )
+            except Exception as e:
+                logger.error(f"Ошибка отправки аватарки: {e}")
+                await query.message.chat.send_message(
+                    text=card_text,
+                    parse_mode='Markdown',
+                    reply_markup=keyboard,
+                )
+        else:
+            await query.edit_message_text(card_text, parse_mode='Markdown', reply_markup=keyboard)
+
+    async def _handle_show_avatar(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
+        """Отправить аватарку клиента отдельным сообщением."""
+        from asgiref.sync import sync_to_async
+
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return Client.objects.filter(id=client_id).first()
+
+        client = await sync_to_async(_get)()
+        if client and client.avatar and client.avatar.name:
+            avatar_url = f"{NGROK_URL}{client.avatar.url}"
+            caption = f"🖼️ *Аватарка*\n👤 {client.first_name} {client.last_name}"
+            try:
+                await query.message.chat.send_photo(photo=avatar_url, caption=caption, parse_mode='Markdown')
+            except Exception as e:
+                logger.error(f"Ошибка отправки аватарки: {e}")
+                await query.message.reply_text("❌ Не удалось отправить аватарку")
+        else:
+            await query.message.reply_text("❌ У клиента нет аватарки")
+
+    async def _handle_show_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Статистика CRM."""
+        from asgiref.sync import sync_to_async
+
+        query = update.callback_query
+        await query.answer()
+
+        def _get_stats():
+            return {
+                'total': Client.objects.count(),
+                'vip': Client.objects.filter(status='vip').count(),
+                'active': Client.objects.filter(status='active').count(),
+                'regular': Client.objects.filter(status='regular').count(),
+                'lead': Client.objects.filter(status='lead').count(),
+                'events': ScheduledEvent.objects.filter(is_completed=False).count(),
+            }
+
+        s = await sync_to_async(_get_stats)()
+        response = (
+            f"📊 *Статистика CRM:*\n\n"
+            f"👥 Всего клиентов: *{s['total']}*\n\n"
+            "По статусам:\n"
+            f"⭐ VIP: {s['vip']}\n"
+            f"✅ Активные: {s['active']}\n"
+            f"🔄 Постоянные: {s['regular']}\n"
+            f"🆕 Лиды: {s['lead']}\n\n"
+            f"📅 Запланировано событий: {s['events']}"
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton("⬅️ Назад к списку", callback_data="back_to_list")]
+        ])
+        await query.edit_message_text(response, parse_mode='Markdown', reply_markup=keyboard)
+
+    async def _handle_show_birthdays(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Дни рождения в ближайшую неделю."""
+        from asgiref.sync import sync_to_async
+
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return list(Client.objects.filter(birth_date__isnull=False))
+
+        all_clients = await sync_to_async(_get)()
+        today = timezone.now().date()
+        clients_list = []
+        for client in all_clients:
+            next_birthday = client.birth_date.replace(year=today.year)
+            if next_birthday < today:
+                next_birthday = next_birthday.replace(year=today.year + 1)
+            days_until = (next_birthday - today).days
+            if 0 <= days_until <= 7:
+                clients_list.append((client, days_until))
+
+        if clients_list:
+            response = "🎂 *Дни рождения в ближайшую неделю:*\n\n"
+            for client, days in sorted(clients_list, key=lambda x: x[1]):
+                status_emoji = {'vip': '⭐', 'active': '✅', 'regular': '🔄', 'lead': '🆕', 'inactive': '⏸️'}.get(client.status, '📌')
+                response += f"{status_emoji} *{client.first_name} {client.last_name}*\n"
+                response += f"   📞 {client.phone}\n"
+                if client.company:
+                    response += f"   🏢 {client.company}\n"
+                response += f"   📅 {client.birth_date.strftime('%d.%m')} (через {days} дн.)\n\n"
+        else:
+            response = "🎂 В ближайшую неделю нет дней рождения."
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton("⬅️ Назад к списку", callback_data="back_to_list")]
+        ])
+        await query.edit_message_text(response, parse_mode='Markdown', reply_markup=keyboard)
+
+    async def _handle_show_events_calendar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Календарь событий на текущий месяц."""
+        query = update.callback_query
+        await query.answer()
+
+        today = datetime.now()
+        month, year = today.month, today.year
+        keyboard = get_events_calendar_keyboard(month, year)
+        text = f"📅 *Календарь событий*\n{MONTHS_RU[month]} {year}\n\n• — есть события"
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"Ошибка показа календаря: {e}")
+            await query.message.reply_text(text, parse_mode='Markdown', reply_markup=keyboard)
+
+    async def _handle_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int, action_type: str):
+        """Быстрые действия с клиентом: call / note / meeting."""
+        from asgiref.sync import sync_to_async
+
+        query = update.callback_query
+        await query.answer()
+
+        # call — сразу отправляем контакт + логируем Interaction
+        if action_type == 'call':
+            await self._handle_call_with_log(update, context, client_id)
+            return
+
+        # note — переходим в FSM для ввода текста заметки
+        if action_type == 'note':
+            context.user_data['note_client_id'] = client_id
+            context.user_data['awaiting_note'] = True
+
+            def _get():
+                return Client.objects.filter(id=client_id).first()
+
+            client = await sync_to_async(_get)()
+            if not client:
+                await query.edit_message_text("❌ Клиент не найден")
+                return
+
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+
+            await query.message.chat.send_message(
+                f"📝 *Заметка для {client.first_name} {client.last_name}*\n\n"
+                f"Введите текст заметки (или отправьте «Отмена»):",
+                parse_mode='Markdown',
+            )
+            return
+
+        # meeting и остальные — переход в планирование
+        await self._handle_plan_start(update, context, client_id)
+
+    async def _handle_call_with_log(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
+        """Отправить контакт + создать Interaction(type='call')."""
+        from asgiref.sync import sync_to_async
+
+        query = update.callback_query
+
+        def _get():
+            return Client.objects.filter(id=client_id).first()
+
+        client = await sync_to_async(_get)()
+        if not client or not client.phone:
+            await query.message.reply_text("❌ У клиента нет телефона.")
+            return
+
+        try:
+            await sync_to_async(Interaction.objects.create)(
+                client=client,
+                type='call',
+                content=f"Звонок клиенту {client.first_name} {client.last_name}",
+                created_at=timezone.now(),
+            )
+        except Exception as e:
+            logger.error(f"Ошибка создания Interaction(call): {e}")
+
+        await query.message.reply_text(
+            f"📞 *Позвонить: {client.first_name} {client.last_name}*\n\n"
+            f"Нажмите на номер ниже — телефон предложит позвонить:",
+            parse_mode='Markdown',
+        )
+        await query.message.reply_contact(
+            phone_number=client.phone,
+            first_name=client.first_name,
+            last_name=client.last_name or '',
+        )
+
     # ============ ОБРАБОТЧИКИ КНОПОК ============
 
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Главный роутер всех callback'ов."""
         query = update.callback_query
         data = query.data
+
+        logger.info(f"🔘 callback: {data}")
+
+        # --- ГЛАВНЫЕ КНОПКИ ---
+        if data == 'noop':
+            await query.answer()
+            return
+
+        if data == 'main_menu':
+            await self._handle_main_menu(update, context)
+            return
+
+        if data == 'back_to_list' or data == 'refresh_list':
+            await self._handle_back_to_list(update, context)
+            return
+
+        # --- СПИСОК КЛИЕНТОВ ---
+        if data.startswith('list_page_'):
+            page = int(data.split('_')[2])
+            await self._handle_list_page(update, context, page)
+            return
+
+        if data.startswith('list_letter_'):
+            letter = data.split('_')[2]
+            await self._handle_list_letter(update, context, letter)
+            return
+
+        if data.startswith('client_detail_'):
+            client_id = int(data.split('_')[2])
+            await self._handle_client_detail(update, context, client_id)
+            return
 
         if data.startswith('client_'):
             client_id = int(data.split('_')[1])
             await self.show_client_actions(update, context, client_id)
             return
 
+        # --- ДЕЙСТВИЯ С КЛИЕНТОМ ---
         if data.startswith('action_'):
             parts = data.split('_')
             client_id = int(parts[1])
             action_type = parts[2]
-
-            # Сохраняем выбранного клиента
-            context.user_data['selected_client_id'] = client_id
-
-            if action_type == 'call':
-                await self.handle_call_action(update, context)
-                return
-
-            if action_type == 'message':
-                await self.handle_email_action(update, context)
-                return
-
-            await self.start_event_planning(update, context, client_id, action_type)
+            await self._handle_action(update, context, client_id, action_type)
             return
 
+        if data.startswith('show_avatar_'):
+            client_id = int(data.split('_')[2])
+            await self._handle_show_avatar(update, context, client_id)
+            return
+
+        # --- ПЛАНИРОВАНИЕ ---
+        if data.startswith('plan_action_'):
+            action_type = data.replace('plan_action_', '')
+            await self._handle_plan_action(update, context, action_type)
+            return
+
+        if data.startswith('plan_'):
+            client_id = int(data.split('_')[1])
+            await self._handle_plan_start(update, context, client_id)
+            return
+
+        if data == 'plan_cancel':
+            await self._handle_plan_cancel(update, context)
+            return
+
+        # --- КАЛЕНДАРЬ ПЛАНИРОВАНИЯ ---
+        if data.startswith('month_'):
+            parts = data.split('_')
+            await self._handle_month(update, context, int(parts[1]), int(parts[2]))
+            return
+
+        if data.startswith('day_'):
+            parts = data.split('_')
+            if len(parts) > 4 and parts[4] == 'past':
+                await query.answer('❌ Нельзя выбрать прошедшую дату!', show_alert=True)
+                return
+            await self._handle_day(update, context, int(parts[1]), int(parts[2]), int(parts[3]))
+            return
+
+        if data.startswith('hour_'):
+            hour = int(data.split('_')[1])
+            await self._handle_hour(update, context, hour)
+            return
+
+        if data.startswith('minute_'):
+            parts = data.split('_')
+            await self._handle_minute(update, context, int(parts[1]), int(parts[2]))
+            return
+
+        if data == 'back_to_months':
+            await self._handle_back_to_months(update, context)
+            return
+
+        if data == 'back_to_days':
+            await self._handle_back_to_days(update, context)
+            return
+
+        if data == 'back_to_hours':
+            await self._handle_back_to_hours(update, context)
+            return
+
+        # --- СТАТИСТИКА / ДНИ РОЖДЕНИЯ / СОБЫТИЯ ---
+        if data == 'show_stats':
+            await self._handle_show_stats(update, context)
+            return
+
+        if data == 'show_birthdays':
+            await self._handle_show_birthdays(update, context)
+            return
+
+        if data == 'show_events' or data == 'show_events_calendar':
+            await self._handle_show_events_calendar(update, context)
+            return
+
+        # --- КАЛЕНДАРЬ СОБЫТИЙ ---
+        if data.startswith('event_month_'):
+            parts = data.split('_')
+            await self._handle_event_month(update, context, int(parts[2]), int(parts[3]))
+            return
+
+        if data == 'event_today':
+            await self._handle_event_today(update, context)
+            return
+
+        if data.startswith('event_day_'):
+            parts = data.split('_')
+            await self._handle_event_day(update, context, int(parts[2]), int(parts[3]), int(parts[4]))
+            return
+
+        if data.startswith('event_hour_empty_'):
+            parts = data.split('_')
+            await self._handle_event_hour_empty(update, context, int(parts[3]), int(parts[4]), int(parts[5]), int(parts[6]))
+            return
+
+        if data.startswith('event_hour_'):
+            parts = data.split('_')
+            await self._handle_event_hour(update, context, int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5]))
+            return
+
+        if data.startswith('event_time_slot_'):
+            parts = data.split('_')
+            await self._handle_event_time_slot(update, context, int(parts[3]), int(parts[4]), int(parts[5]), int(parts[6]), int(parts[7]))
+            return
+
+        if data.startswith('event_detail_'):
+            event_id = int(data.split('_')[2])
+            await self._handle_event_detail(update, context, event_id)
+            return
+
+        if data.startswith('event_complete_'):
+            event_id = int(data.split('_')[2])
+            await self._handle_event_complete(update, context, event_id)
+            return
+
+        if data.startswith('event_plan_at_'):
+            parts = data.split('_')
+            day = int(parts[3]); month = int(parts[4]); year = int(parts[5])
+            hour = int(parts[6]) if len(parts) > 6 else 9
+            minute = int(parts[7]) if len(parts) > 7 else 0
+            await self._handle_event_plan_at(update, context, day, month, year, hour, minute)
+            return
+
+        if data.startswith('event_back_to_calendar_'):
+            parts = data.split('_')
+            await self._handle_event_back_to_calendar(update, context, int(parts[4]), int(parts[5]))
+            return
+
+        if data.startswith('event_back_to_day_'):
+            parts = data.split('_')
+            await self._handle_event_back_to_day(update, context, int(parts[4]), int(parts[5]), int(parts[6]))
+            return
+
+        # --- ГОД В КАЛЕНДАРЕ ---
+        if data.startswith('year_'):
+            year = int(data.split('_')[1])
+            await self._handle_year(update, context, year)
+            return
+
+        # --- ПОИСК / ДОБАВИТЬ / ПОМОЩЬ ---
+        if data == 'find_client':
+            await self.find(update, context)
+            return
+
+        if data == 'add_client':
+            await self.add(update, context)
+            return
+
+        if data == 'show_help':
+            await self.help(update, context)
+            return
+
+        # --- СУЩЕСТВУЮЩИЕ ОБРАБОТЧИКИ ИЗ СТАРОГО bot.py ---
         if data == 'save_contact':
             await self.handle_save_contact(update, context)
             return
@@ -795,13 +1339,9 @@ class TelegramBot:
             await self.handle_birthday_action(update, context)
             return
 
-        if data == 'back_to_list':
-            await self.list_clients(update, context)
-            return
-
-        if data == 'list_all':
-            await self.list_clients(update, context)
-            return
+        # --- FALLBACK ---
+        logger.warning(f"⚠️ Необработанный callback: {data}")
+        await query.answer("⚠️ Действие не поддерживается", show_alert=False)
 
     # ============ ДРУГИЕ КОМАНДЫ ============
 
@@ -940,64 +1480,11 @@ class TelegramBot:
                 f"📞 {client.phone}"
             )
 
-    # ============ АВАТАРКИ ============
-
-    async def avatar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        from asgiref.sync import sync_to_async
-
-        search_query = ' '.join(context.args) if context.args else ''
-        if not search_query:
-            await update.message.reply_text("📷 Используйте: /avatar [имя или телефон]")
-            return
-
-        def _find():
-            return list(
-                Client.objects.filter(first_name__icontains=search_query)
-                | Client.objects.filter(last_name__icontains=search_query)
-                | Client.objects.filter(phone__icontains=search_query)
-            )
-
-        clients = await sync_to_async(_find)()
-
-        if clients:
-            context.user_data['avatar_client_id'] = clients[0].id
-            await update.message.reply_text(
-                f"📷 Найден клиент: {clients[0].first_name} {clients[0].last_name}\n"
-                "Отправьте фото для этого клиента"
-            )
-        else:
-            await update.message.reply_text("❌ Клиент не найден")
-
-    async def _save_avatar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Сохранение аватарки клиента."""
-        from asgiref.sync import sync_to_async
-
-        client_id = context.user_data.pop('avatar_client_id', None)
-        if not client_id:
-            return
-
-        photo = update.message.photo[-1]
-        file = await photo.get_file()
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
-            await file.download_to_drive(tmp.name)
-
-            client = await sync_to_async(Client.objects.get)(id=client_id)
-            from django.core.files import File
-            with open(tmp.name, 'rb') as f:
-                client.avatar.save(f'avatar_{client_id}.jpg', File(f), save=True)
-
-            os.unlink(tmp.name)
-
-        await update.message.reply_text(
-            f"✅ Аватарка сохранена для {client.first_name} {client.last_name}"
-        )
-
     # ============ ЗАПУСК БОТА ============
 
     def run_polling(self):
         from telegram.ext import Application
-        import os
+
 
         logger.info("🚀 Запуск бота в режиме polling...")
 
