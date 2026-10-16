@@ -170,7 +170,7 @@ class TelegramBot:
         from asgiref.sync import sync_to_async
 
         def _get():
-            return list(Client.objects.all().order_by('-created_at'))
+            return Client.objects.all().order_by('-created_at')
 
         clients = await sync_to_async(_get)()
 
@@ -949,7 +949,7 @@ class TelegramBot:
         await query.answer()
 
         def _get():
-            return list(Client.objects.all().order_by('-created_at'))
+            return Client.objects.all().order_by('-created_at')
 
         clients = await sync_to_async(_get)()
         message_text, keyboard = get_clients_list_message(clients, 1)
@@ -966,7 +966,7 @@ class TelegramBot:
         await query.answer()
 
         def _get():
-            return list(Client.objects.all().order_by('-created_at'))
+            return Client.objects.all().order_by('-created_at')
 
         clients = await sync_to_async(_get)()
         message_text, keyboard = get_clients_list_message(clients, page)
@@ -979,9 +979,9 @@ class TelegramBot:
         await query.answer()
 
         def _get():
-            return list(Client.objects.filter(
+            return Client.objects.filter(
                 Q(first_name__istartswith=letter) | Q(last_name__istartswith=letter)
-            ).order_by('first_name'))
+            ).order_by('first_name')
 
         clients = await sync_to_async(_get)()
         if not clients:
