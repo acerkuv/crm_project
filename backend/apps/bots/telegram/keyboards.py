@@ -265,11 +265,22 @@ def get_client_full_actions_keyboard(client_id):
         "inline_keyboard": [
             [
                 {"text": "📞 Позвонить", "callback_data": f"action_{client_id}_call"},
+                {"text": "✉️ Написать", "callback_data": f"action_{client_id}_message"}
+            ],
+            [
+                {"text": "🎂 Поздравить", "callback_data": f"action_{client_id}_birthday"},
+                {"text": "📅 Встреча", "callback_data": f"action_{client_id}_meeting"}
+            ],
+            [
+                {"text": "🔔 Напомнить", "callback_data": f"action_{client_id}_reminder"},
                 {"text": "📝 Заметка", "callback_data": f"action_{client_id}_note"}
             ],
             [
                 {"text": "📅 План", "callback_data": f"plan_{client_id}"},
                 {"text": "🖼️ Аватарка", "callback_data": f"show_avatar_{client_id}"}
+            ],
+            [
+                {"text": "🤖 ИИ помощь", "callback_data": f"action_{client_id}_ai"}
             ],
             [
                 {"text": "⬅️ Назад к списку", "callback_data": "back_to_list"}
