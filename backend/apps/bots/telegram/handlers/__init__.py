@@ -1,5 +1,17 @@
-# Импорты для удобства
-from .commands import *
-from .callbacks import *
-from .messages import *
-from .base import *
+"""Mixin-модули для TelegramBot.
+
+Каждый файл — отдельный класс с методами для одного сценария.
+TelegramBot наследует их все:
+
+    class TelegramBot(
+        HelpersMixin,
+        CommandsMixin,
+        PhotosMixin,
+        ClientsMixin,
+        EventsMixin,
+        EmailMixin,
+        CallbacksMixin,
+    ):
+        def __init__(self):
+            ...
+"""

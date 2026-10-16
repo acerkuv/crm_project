@@ -29,6 +29,9 @@ import requests
 import json as json_lib
 import uuid
 
+from .handlers.photos import PhotosMixin
+from .handlers.helpers import main_reply_markup as _main_reply_markup
+
 from apps.bots.telegram.keyboards import (
     get_main_menu_keyboard,
     get_main_reply_keyboard,
@@ -85,7 +88,7 @@ def _main_reply_markup():
     )
 
 
-class TelegramBot:
+class TelegramBot(PhotosMixin):
     def __init__(self):
         self.token = settings.TELEGRAM_BOT_TOKEN
         logger.info("🤖 Бот инициализирован")
