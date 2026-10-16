@@ -3,6 +3,7 @@ import os
 import base64
 import json
 import tempfile
+from io import BytesIO
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -28,7 +29,6 @@ import requests
 import json as json_lib
 import uuid
 
-# Импорты клавиатур и утилит для FSM
 from apps.bots.telegram.keyboards import (
     get_main_menu_keyboard,
     get_main_reply_keyboard,
@@ -58,7 +58,6 @@ from django.db.models import Q
 
 logger = logging.getLogger(__name__)
 
-# Состояния FSM
 (
     SELECTING_CLIENT,
     SELECTING_ACTION,
@@ -69,14 +68,12 @@ logger = logging.getLogger(__name__)
     ENTERING_BIRTHDAY_MESSAGE,
 ) = range(7)
 
-# Дополнительные состояния для email
 (
     EMAIL_SUBJECT,
     EMAIL_BODY,
 ) = range(7, 9)
 
 
-# Reply-клавиатура (единый шаблон)
 def _main_reply_markup():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -93,7 +90,7 @@ class TelegramBot:
         self.token = settings.TELEGRAM_BOT_TOKEN
         logger.info("🤖 Бот инициализирован")
 
-    # ============ ХЭНДЛЕРЫ КОМАНД ============
+    # ============ КОМАНДЫ ============
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
@@ -164,7 +161,6 @@ class TelegramBot:
         )
 
     async def _get_clients_list(self):
-        """Получить список клиентов (sync-to-async wrapper)."""
         from asgiref.sync import sync_to_async
         return await sync_to_async(lambda: list(Client.objects.all()[:10]))()
 
@@ -172,13 +168,12 @@ class TelegramBot:
         await update.message.reply_text("🔍 Введите имя или телефон клиента:")
         context.user_data['finding'] = True
 
-    # ============ ОБРАБОТКА ТЕКСТА (FSM) ============
+    # ============ ОБРАБОТКА ТЕКСТА ============
 
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = update.message.text.strip()
         from asgiref.sync import sync_to_async
 
-        # ============ 0. REPLY-КЛАВИАТУРА (приоритетно) ============
         if text in ('📋 Список', '📋 Список клиентов'):
             await self.list_clients(update, context)
             return
@@ -208,7 +203,6 @@ class TelegramBot:
             await update.message.reply_text("❌ Отменено", reply_markup=_main_reply_markup())
             return
 
-        # ============ 1. ЗАМЕТКА ============
         if context.user_data.get('awaiting_note'):
             client_id = context.user_data.get('note_client_id')
             context.user_data.pop('awaiting_note', None)
@@ -241,7 +235,6 @@ class TelegramBot:
                 await update.message.reply_text(f"❌ Ошибка: {e}", reply_markup=_main_reply_markup())
             return
 
-        # ============ 2. ОПИСАНИЕ СОБЫТИЯ ============
         if context.user_data.get('awaiting_event_description'):
             client_id = context.user_data.get('event_description_client_id')
             action = context.user_data.get('event_description_action')
@@ -260,7 +253,6 @@ class TelegramBot:
             )
             return
 
-        # ============ 3. EMAIL ============
         if context.user_data.get('awaiting_email', {}).get('stage') == 'subject':
             await self._handle_email_subject(update, context)
             return
@@ -269,7 +261,6 @@ class TelegramBot:
             await self._handle_email_body(update, context)
             return
 
-        # ============ 4. ПОИСК ============
         if context.user_data.get('finding'):
             context.user_data['finding'] = False
 
@@ -306,7 +297,6 @@ class TelegramBot:
                 )
             return
 
-        # ============ 5. FALLBACK ============
         await update.message.reply_text(
             "🤔 Не понял команду. Используйте меню ниже или /help",
             reply_markup=_main_reply_markup(),
@@ -365,7 +355,7 @@ class TelegramBot:
 
         context.user_data['selected_client_id'] = client_id
 
-    # ============ FSM: ПЛАНИРОВАНИЕ СОБЫТИЙ ============
+    # ============ ПЛАНИРОВАНИЕ ============
 
     async def start_event_planning(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id, action_type):
         from asgiref.sync import sync_to_async
@@ -393,7 +383,6 @@ class TelegramBot:
                 [InlineKeyboardButton("✍️ Написать самому", callback_data="birthday_manual")],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-
             await query.edit_message_text(
                 f"🎂 *Поздравление для {client.first_name}*\n\n"
                 f"📅 День рождения: {client.birth_date.strftime('%d.%m.%Y')}\n\n"
@@ -423,9 +412,7 @@ class TelegramBot:
                 "Искусственный интеллект создает персонализированное поздравление...\n"
                 "Пожалуйста, подождите ⏳"
             )
-
             greeting = await self.generate_ai_greeting(client)
-
             scheduled_date = client.birth_date.replace(year=timezone.now().year)
             if scheduled_date < timezone.now().date():
                 scheduled_date = scheduled_date.replace(year=timezone.now().year + 1)
@@ -439,13 +426,11 @@ class TelegramBot:
                 is_ai_generated=True,
                 ai_content=greeting,
             )
-
             keyboard = [
                 [InlineKeyboardButton("📤 Отправить сейчас", callback_data=f"send_birthday_{event.id}")],
                 [InlineKeyboardButton("📅 Запланировать", callback_data=f"schedule_birthday_{event.id}")],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-
             await query.edit_message_text(
                 f"🎉 *Поздравление для {client.first_name}*\n\n"
                 f"{greeting}\n\n"
@@ -455,7 +440,6 @@ class TelegramBot:
                 parse_mode='Markdown',
                 reply_markup=reply_markup,
             )
-
         elif query.data == 'birthday_manual':
             await query.edit_message_text(
                 f"✍️ *Напишите текст поздравления для {client.first_name}*\n\n"
@@ -466,7 +450,6 @@ class TelegramBot:
                 "{{company}} - компания"
             )
             context.user_data['awaiting_birthday_text'] = True
-
         return ConversationHandler.END
 
     async def save_birthday_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -489,13 +472,11 @@ class TelegramBot:
             is_ai_generated=False,
             ai_content=text,
         )
-
         keyboard = [
             [InlineKeyboardButton("📤 Отправить сейчас", callback_data=f"send_birthday_{event.id}")],
             [InlineKeyboardButton("📅 Запланировать", callback_data=f"schedule_birthday_{event.id}")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-
         await update.message.reply_text(
             f"✅ *Поздравление сохранено!*\n\n"
             f"👤 {client.first_name} {client.last_name}\n"
@@ -505,7 +486,6 @@ class TelegramBot:
             parse_mode='Markdown',
             reply_markup=reply_markup,
         )
-
         context.user_data['awaiting_birthday_text'] = False
 
     async def handle_birthday_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -532,7 +512,6 @@ class TelegramBot:
                     "❌ У клиента нет Telegram ID.\n"
                     "Сохраните событие как напоминание."
                 )
-
         elif query.data.startswith('schedule_birthday'):
             await query.edit_message_text(
                 f"✅ Поздравление запланировано на {event.scheduled_date.strftime('%d.%m.%Y')}\n\n"
@@ -545,7 +524,6 @@ class TelegramBot:
             if settings.OPENAI_API_KEY:
                 from openai import AsyncOpenAI
                 openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
                 prompt = f"""
                 Создай персонализированное поздравление с днем рождения для {client.first_name} {client.last_name}.
                 {"Он/она работает в " + client.company if client.company else ""}
@@ -557,7 +535,6 @@ class TelegramBot:
                 - Персонализированным
                 - Коротким (3-4 предложения)
                 """
-
                 response = await openai_client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": prompt}],
@@ -567,17 +544,19 @@ class TelegramBot:
                 return response.choices[0].message.content
         except Exception as e:
             logger.error(f"Ошибка генерации ИИ: {e}")
-
         return f"🎉 Дорогой(ая) {client.first_name}! Поздравляю с днём рождения! Желаю счастья, здоровья и успехов во всех начинаниях! 🎂"
 
-    # ============ РАСПОЗНАВАНИЕ ВИЗИТОК ============
+    # ============ ФОТО / ВИЗИТКИ / АВАТАРКИ ============
 
     async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработка фото — распознавание визитки или аватарки."""
+        logger.info(f"📷 Получено фото. avatar_client_id={context.user_data.get('avatar_client_id')}")
+
         if context.user_data.get('avatar_client_id'):
+            logger.info(f"📷 Обрабатываю как аватарку для client_id={context.user_data.get('avatar_client_id')}")
             await self._save_avatar(update, context)
             return
 
+        logger.info("📷 Обрабатываю как визитку")
         photo = update.message.photo[-1]
         file = await photo.get_file()
 
@@ -587,7 +566,6 @@ class TelegramBot:
 
         try:
             await update.message.reply_text("🔍 Распознаю данные с визитки...")
-
             data = await self._recognize_business_card(tmp_path)
 
             if not data or not (data.get('phone') or data.get('email')):
@@ -601,7 +579,6 @@ class TelegramBot:
                 return
 
             context.user_data['pending_contact'] = data
-
             keyboard = [
                 [InlineKeyboardButton("✅ Сохранить", callback_data="save_contact")],
                 [InlineKeyboardButton("❌ Отмена", callback_data="cancel_contact")],
@@ -620,12 +597,7 @@ class TelegramBot:
                 text += f"💼 {data['position']}\n"
             text += "\nСохранить в CRM?"
 
-            await update.message.reply_text(
-                text,
-                parse_mode='Markdown',
-                reply_markup=reply_markup,
-            )
-
+            await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
         except Exception as e:
             logger.error(f"Ошибка обработки фото: {e}")
             await update.message.reply_text(f"❌ Ошибка: {e}")
@@ -636,7 +608,6 @@ class TelegramBot:
                 pass
 
     async def _recognize_business_card(self, image_path: str) -> dict:
-        """Распознать визитку через GigaChat."""
         import httpx
 
         async with httpx.AsyncClient(verify=False) as http:
@@ -694,11 +665,9 @@ class TelegramBot:
             if content.startswith("json"):
                 content = content[4:]
             content = content.strip()
-
         return json.loads(content)
 
     async def handle_save_contact(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Сохранение распознанного контакта."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -752,11 +721,9 @@ class TelegramBot:
                 f"📞 {client.phone}\n"
                 f"✉️ {client.email or '—'}"
             )
-
         context.user_data.pop('pending_contact', None)
 
     async def handle_cancel_contact(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Отмена сохранения контакта."""
         query = update.callback_query
         await query.answer()
         context.user_data.pop('pending_contact', None)
@@ -765,7 +732,6 @@ class TelegramBot:
     # ============ EMAIL ============
 
     async def handle_email_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Начало отправки email клиенту."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -789,7 +755,6 @@ class TelegramBot:
             'client_id': client_id,
             'stage': 'subject',
         }
-
         await query.edit_message_text(
             f"✉️ *Отправка письма*\n\n"
             f"👤 Кому: {client.first_name} {client.last_name}\n"
@@ -802,7 +767,6 @@ class TelegramBot:
         email_data = context.user_data['awaiting_email']
         email_data['subject'] = update.message.text
         email_data['stage'] = 'body'
-
         await update.message.reply_text(
             f"📝 Тема: {email_data['subject']}\n\n"
             "Теперь введите *текст* письма:",
@@ -814,7 +778,6 @@ class TelegramBot:
 
         email_data = context.user_data['awaiting_email']
         email_data['body'] = update.message.text
-
         client = await sync_to_async(Client.objects.get)(id=email_data['client_id'])
 
         try:
@@ -825,7 +788,6 @@ class TelegramBot:
                 recipient_list=[client.email],
                 fail_silently=False,
             )
-
             await sync_to_async(Interaction.objects.create)(
                 client=client,
                 type='email',
@@ -833,7 +795,6 @@ class TelegramBot:
                 created_at=timezone.now(),
                 completed_at=timezone.now(),
             )
-
             await update.message.reply_text(
                 f"✅ Письмо отправлено!\n\n"
                 f"📧 Кому: {client.email}\n"
@@ -843,7 +804,6 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Ошибка отправки email: {e}")
             await update.message.reply_text(f"❌ Ошибка отправки: {e}", reply_markup=_main_reply_markup())
-
         context.user_data.pop('awaiting_email', None)
 
     # ============ АВАТАРКИ ============
@@ -864,7 +824,6 @@ class TelegramBot:
             )
 
         clients = await sync_to_async(_find)()
-
         if clients:
             context.user_data['avatar_client_id'] = clients[0].id
             await update.message.reply_text(
@@ -878,29 +837,39 @@ class TelegramBot:
         from asgiref.sync import sync_to_async
 
         client_id = context.user_data.pop('avatar_client_id', None)
+        logger.info(f"💾 _save_avatar: client_id={client_id}")
         if not client_id:
+            logger.warning("💾 _save_avatar: client_id отсутствует, выхожу")
             return
 
         photo = update.message.photo[-1]
         file = await photo.get_file()
 
         with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
-            await file.download_to_drive(tmp.name)
+            tmp_path = tmp.name
+            await file.download_to_drive(tmp_path)
+            logger.info(f"💾 Скачано во временный файл: {tmp_path}")
 
+        try:
             client = await sync_to_async(Client.objects.get)(id=client_id)
             from django.core.files import File
-            with open(tmp.name, 'rb') as f:
-                client.avatar.save(f'avatar_{client_id}.jpg', File(f), save=True)
+            with open(tmp_path, 'rb') as f:
+                await sync_to_async(client.avatar.save)(f'avatar_{client_id}.jpg', File(f), save=True)
+            logger.info(f"💾 Аватарка сохранена: {client.avatar.name}")
 
-            os.unlink(tmp.name)
-
-        await update.message.reply_text(
-            f"✅ Аватарка сохранена для {client.first_name} {client.last_name}"
-        )
-            # ============ ЗВОНКИ ============
+            await update.message.reply_text(
+                f"✅ Аватарка сохранена для {client.first_name} {client.last_name}"
+            )
+        except Exception as e:
+            logger.error(f"❌ Ошибка сохранения аватарки: {e}", exc_info=True)
+            await update.message.reply_text(f"❌ Ошибка сохранения: {e}")
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
     async def handle_call_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Отправка контакта для кликабельного звонка."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -912,7 +881,6 @@ class TelegramBot:
             return
 
         client = await sync_to_async(Client.objects.get)(id=client_id)
-
         if not client.phone:
             await query.edit_message_text("❌ У клиента нет телефона.")
             return
@@ -922,17 +890,14 @@ class TelegramBot:
             f"Нажмите на номер ниже — телефон предложит позвонить:",
             parse_mode='Markdown',
         )
-
         await query.message.reply_contact(
             phone_number=client.phone,
             first_name=client.first_name,
             last_name=client.last_name or '',
         )
-
     # ============ НОВЫЕ МЕТОДЫ: СПИСОК, КАРТОЧКИ, МЕНЮ ============
 
     async def _handle_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Главное меню."""
         query = update.callback_query
         await query.answer()
         await query.edit_message_text(
@@ -950,7 +915,6 @@ class TelegramBot:
         )
 
     async def _handle_back_to_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Возврат к списку клиентов (страница 1)."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -961,7 +925,6 @@ class TelegramBot:
 
         clients = await sync_to_async(_get)()
         message_text, keyboard = get_clients_list_message(clients, 1)
-
         try:
             await query.edit_message_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
         except Exception as e:
@@ -969,7 +932,6 @@ class TelegramBot:
             await query.message.reply_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_list_page(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int):
-        """Пагинация списка клиентов."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -983,7 +945,6 @@ class TelegramBot:
         await query.edit_message_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_list_letter(self, update: Update, context: ContextTypes.DEFAULT_TYPE, letter: str):
-        """Фильтр списка по первой букве."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -1008,7 +969,7 @@ class TelegramBot:
         await query.edit_message_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_client_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
-        """Полная карточка клиента с аватаркой (если есть)."""
+        """Полная карточка клиента с аватаркой через .read() (работает и для local, и для S3)."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -1026,30 +987,26 @@ class TelegramBot:
         keyboard = get_client_full_actions_keyboard(client.id)
 
         if client.avatar and client.avatar.name:
-            avatar_url = f"{NGROK_URL}{client.avatar.url}"
             try:
-                await query.message.delete()
-            except Exception:
-                pass
-            try:
+                photo_data = await sync_to_async(client.avatar.read)()
                 await query.message.chat.send_photo(
-                    photo=avatar_url,
+                    photo=BytesIO(photo_data),
                     caption=card_text,
                     parse_mode='Markdown',
                     reply_markup=keyboard,
                 )
+                try:
+                    await query.message.delete()
+                except Exception:
+                    pass
             except Exception as e:
-                logger.error(f"Ошибка отправки аватарки: {e}")
-                await query.message.chat.send_message(
-                    text=card_text,
-                    parse_mode='Markdown',
-                    reply_markup=keyboard,
-                )
+                logger.error(f"❌ Ошибка отправки аватарки: {e}", exc_info=True)
+                await query.edit_message_text(card_text, parse_mode='Markdown', reply_markup=keyboard)
         else:
             await query.edit_message_text(card_text, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_show_avatar(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
-        """Отправить аватарку клиента отдельным сообщением."""
+        """Отправить аватарку клиента отдельным сообщением (через .read())."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -1060,18 +1017,21 @@ class TelegramBot:
 
         client = await sync_to_async(_get)()
         if client and client.avatar and client.avatar.name:
-            avatar_url = f"{NGROK_URL}{client.avatar.url}"
             caption = f"🖼️ *Аватарка*\n👤 {client.first_name} {client.last_name}"
             try:
-                await query.message.chat.send_photo(photo=avatar_url, caption=caption, parse_mode='Markdown')
+                photo_data = await sync_to_async(client.avatar.read)()
+                await query.message.chat.send_photo(
+                    photo=BytesIO(photo_data),
+                    caption=caption,
+                    parse_mode='Markdown',
+                )
             except Exception as e:
-                logger.error(f"Ошибка отправки аватарки: {e}")
+                logger.error(f"❌ Ошибка отправки аватарки: {e}", exc_info=True)
                 await query.message.reply_text("❌ Не удалось отправить аватарку")
         else:
             await query.message.reply_text("❌ У клиента нет аватарки")
 
     async def _handle_show_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Статистика CRM."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -1104,7 +1064,6 @@ class TelegramBot:
         await query.edit_message_text(response, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_show_birthdays(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Дни рождения в ближайшую неделю."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -1142,7 +1101,6 @@ class TelegramBot:
         await query.edit_message_text(response, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_show_events_calendar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Календарь событий на текущий месяц."""
         query = update.callback_query
         await query.answer()
 
@@ -1157,7 +1115,6 @@ class TelegramBot:
             await query.message.reply_text(text, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_show_events_calendar_from_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Календарь событий по reply-кнопке (из message, не callback)."""
         today = datetime.now()
         month, year = today.month, today.year
         keyboard = get_events_calendar_keyboard(month, year)
@@ -1165,18 +1122,15 @@ class TelegramBot:
         await update.message.reply_text(text, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int, action_type: str):
-        """Быстрые действия с клиентом: call / note / meeting."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
         await query.answer()
 
-        # call — сразу отправляем контакт + логируем Interaction
         if action_type == 'call':
             await self._handle_call_with_log(update, context, client_id)
             return
 
-        # note — переходим в FSM для ввода текста заметки
         if action_type == 'note':
             context.user_data['note_client_id'] = client_id
             context.user_data['awaiting_note'] = True
@@ -1201,11 +1155,9 @@ class TelegramBot:
             )
             return
 
-        # meeting, reminder, birthday, message, ai — переход в планирование
         await self._handle_plan_start(update, context, client_id)
 
     async def _handle_call_with_log(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
-        """Отправить контакт + создать Interaction(type='call')."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -1239,13 +1191,11 @@ class TelegramBot:
             last_name=client.last_name or '',
         )
 
-    # ============ ОБРАБОТЧИКИ КНОПОК ============
+    # ============ РОУТЕР CALLBACK ============
 
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Главный роутер всех callback'ов."""
         query = update.callback_query
         data = query.data
-
         logger.info(f"🔘 callback: {data}")
 
         try:
@@ -1258,11 +1208,9 @@ class TelegramBot:
                 pass
 
     async def _button_handler_impl(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Реализация роутера (обёрнута try/except в button_handler)."""
         query = update.callback_query
         data = query.data
 
-        # --- ГЛАВНЫЕ КНОПКИ ---
         if data == 'noop':
             await query.answer()
             return
@@ -1275,7 +1223,6 @@ class TelegramBot:
             await self._handle_back_to_list(update, context)
             return
 
-        # --- СПИСОК КЛИЕНТОВ ---
         if data.startswith('list_page_'):
             page = int(data.split('_')[2])
             await self._handle_list_page(update, context, page)
@@ -1296,7 +1243,6 @@ class TelegramBot:
             await self.show_client_actions(update, context, client_id)
             return
 
-        # --- ДЕЙСТВИЯ С КЛИЕНТОМ ---
         if data.startswith('action_'):
             parts = data.split('_')
             client_id = int(parts[1])
@@ -1309,7 +1255,6 @@ class TelegramBot:
             await self._handle_show_avatar(update, context, client_id)
             return
 
-        # --- ПЛАНИРОВАНИЕ ---
         if data.startswith('plan_action_'):
             action_type = data.replace('plan_action_', '')
             await self._handle_plan_action(update, context, action_type)
@@ -1324,7 +1269,6 @@ class TelegramBot:
             await self._handle_plan_cancel(update, context)
             return
 
-        # --- КАЛЕНДАРЬ ПЛАНИРОВАНИЯ ---
         if data.startswith('month_'):
             parts = data.split('_')
             await self._handle_month(update, context, int(parts[1]), int(parts[2]))
@@ -1360,7 +1304,6 @@ class TelegramBot:
             await self._handle_back_to_hours(update, context)
             return
 
-        # --- СТАТИСТИКА / ДНИ РОЖДЕНИЯ / СОБЫТИЯ ---
         if data == 'show_stats':
             await self._handle_show_stats(update, context)
             return
@@ -1373,7 +1316,6 @@ class TelegramBot:
             await self._handle_show_events_calendar(update, context)
             return
 
-        # --- КАЛЕНДАРЬ СОБЫТИЙ ---
         if data.startswith('event_month_'):
             parts = data.split('_')
             await self._handle_event_month(update, context, int(parts[2]), int(parts[3]))
@@ -1431,13 +1373,11 @@ class TelegramBot:
             await self._handle_event_back_to_day(update, context, int(parts[4]), int(parts[5]), int(parts[6]))
             return
 
-        # --- ГОД В КАЛЕНДАРЕ ---
         if data.startswith('year_'):
             year = int(data.split('_')[1])
             await self._handle_year(update, context, year)
             return
 
-        # --- ПОИСК / ДОБАВИТЬ / ПОМОЩЬ ---
         if data == 'find_client':
             await self.find(update, context)
             return
@@ -1450,7 +1390,6 @@ class TelegramBot:
             await self.help(update, context)
             return
 
-        # --- СУЩЕСТВУЮЩИЕ ОБРАБОТЧИКИ ---
         if data == 'save_contact':
             await self.handle_save_contact(update, context)
             return
@@ -1467,15 +1406,13 @@ class TelegramBot:
             await self.handle_birthday_action(update, context)
             return
 
-        # --- FALLBACK ---
         logger.warning(f"⚠️ Необработанный callback: {data}")
         await query.answer("⚠️ Действие не поддерживается", show_alert=False)
 
-    # ============ ВРЕМЕННЫЕ ЗАГЛУШКИ (до Части 3-4) ============
+    # ============ ЗАГЛУШКИ (до Части 3-4) ============
 
     async def _handle_plan_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
-        query = update.callback_query
-        await query.answer("⚠️ Планирование ещё не подключено", show_alert=True)
+        await update.callback_query.answer("⚠️ Планирование ещё не подключено", show_alert=True)
 
     async def _handle_plan_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, action_type: str):
         await update.callback_query.answer("⚠️ Планирование ещё не подключено", show_alert=True)
@@ -1488,62 +1425,25 @@ class TelegramBot:
             context.user_data.pop(key, None)
         await update.callback_query.answer("Отменено", show_alert=False)
 
-    async def _handle_month(self, update: Update, context: ContextTypes.DEFAULT_TYPE, month: int, year: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_day(self, update: Update, context: ContextTypes.DEFAULT_TYPE, day: int, month: int, year: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_hour(self, update: Update, context: ContextTypes.DEFAULT_TYPE, hour: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_minute(self, update: Update, context: ContextTypes.DEFAULT_TYPE, hour: int, minute: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_back_to_months(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_back_to_days(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_back_to_hours(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_year(self, update: Update, context: ContextTypes.DEFAULT_TYPE, year: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_event_month(self, update: Update, context: ContextTypes.DEFAULT_TYPE, month: int, year: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_event_today(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_event_day(self, update: Update, context: ContextTypes.DEFAULT_TYPE, day: int, month: int, year: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_event_hour(self, update: Update, context: ContextTypes.DEFAULT_TYPE, day: int, month: int, year: int, hour: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_event_hour_empty(self, update: Update, context: ContextTypes.DEFAULT_TYPE, day: int, month: int, year: int, hour: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_event_time_slot(self, update: Update, context: ContextTypes.DEFAULT_TYPE, day: int, month: int, year: int, hour: int, minute: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_event_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE, event_id: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_event_complete(self, update: Update, context: ContextTypes.DEFAULT_TYPE, event_id: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_event_plan_at(self, update: Update, context: ContextTypes.DEFAULT_TYPE, day: int, month: int, year: int, hour: int = 9, minute: int = 0):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_event_back_to_calendar(self, update: Update, context: ContextTypes.DEFAULT_TYPE, month: int, year: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
-
-    async def _handle_event_back_to_day(self, update: Update, context: ContextTypes.DEFAULT_TYPE, day: int, month: int, year: int):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_month(self, update, context, month, year): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_day(self, update, context, day, month, year): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_hour(self, update, context, hour): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_minute(self, update, context, hour, minute): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_back_to_months(self, update, context): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_back_to_days(self, update, context): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_back_to_hours(self, update, context): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_year(self, update, context, year): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_event_month(self, update, context, month, year): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_event_today(self, update, context): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_event_day(self, update, context, day, month, year): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_event_hour(self, update, context, day, month, year, hour): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_event_hour_empty(self, update, context, day, month, year, hour): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_event_time_slot(self, update, context, day, month, year, hour, minute): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_event_detail(self, update, context, event_id): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_event_complete(self, update, context, event_id): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_event_plan_at(self, update, context, day, month, year, hour=9, minute=0): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_event_back_to_calendar(self, update, context, month, year): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+    async def _handle_event_back_to_day(self, update, context, day, month, year): await update.callback_query.answer("⚠️ Скоро", show_alert=True)
 
     # ============ ДРУГИЕ КОМАНДЫ ============
 
@@ -1553,15 +1453,11 @@ class TelegramBot:
         now = timezone.now()
 
         def _get_events():
-            return list(
-                ScheduledEvent.objects.filter(
-                    scheduled_date__gte=now,
-                    is_completed=False,
-                ).order_by('scheduled_date')[:10]
-            )
+            return list(ScheduledEvent.objects.filter(
+                scheduled_date__gte=now, is_completed=False,
+            ).order_by('scheduled_date')[:10])
 
         events = await sync_to_async(_get_events)()
-
         if not events:
             await update.message.reply_text("📅 Нет запланированных событий.", reply_markup=_main_reply_markup())
             return
@@ -1576,7 +1472,6 @@ class TelegramBot:
             if event.is_ai_generated:
                 message += f"   🤖 Сгенерировано ИИ\n"
             message += "\n"
-
         await update.message.reply_text(message, parse_mode='Markdown', reply_markup=_main_reply_markup())
 
     async def birthdays(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1588,7 +1483,6 @@ class TelegramBot:
             return list(Client.objects.filter(birth_date__isnull=False))
 
         all_clients = await sync_to_async(_get_clients)()
-
         clients_list = []
         for client in all_clients:
             next_birthday = client.birth_date.replace(year=today.year)
@@ -1610,7 +1504,6 @@ class TelegramBot:
             if client.company:
                 message += f"   🏢 {client.company}\n"
             message += f"   📅 {client.birth_date.strftime('%d.%m')} (через {days} дн.)\n\n"
-
         await update.message.reply_text(message, parse_mode='Markdown', reply_markup=_main_reply_markup())
 
     async def stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1628,7 +1521,6 @@ class TelegramBot:
             }
 
         s = await sync_to_async(_get_stats)()
-
         message = (
             "📊 *Статистика CRM:*\n\n"
             f"👥 Всего клиентов: *{s['total']}*\n\n"
@@ -1670,6 +1562,26 @@ class TelegramBot:
 
         client, created = await sync_to_async(_get_or_create)()
 
+        if contact.photo and not (client.avatar and client.avatar.name):
+            try:
+                photo_file = await contact.photo.get_file()
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+                    tmp_path = tmp.name
+                    await photo_file.download_to_drive(tmp_path)
+
+                try:
+                    from django.core.files import File
+                    with open(tmp_path, 'rb') as f:
+                        await sync_to_async(client.avatar.save)(f'avatar_{client.id}.jpg', File(f), save=True)
+                    logger.info(f"✅ Аватарка из контакта сохранена для client_id={client.id}")
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.error(f"❌ Ошибка сохранения аватарки из контакта: {e}", exc_info=True)
+
         if created:
             await update.message.reply_text(
                 f"✅ Клиент добавлен!\n\n"
@@ -1685,7 +1597,7 @@ class TelegramBot:
                 reply_markup=_main_reply_markup(),
             )
 
-    # ============ ЗАПУСК БОТА ============
+    # ============ ЗАПУСК ============
 
     def run_polling(self):
         from telegram.ext import Application
@@ -1700,7 +1612,6 @@ class TelegramBot:
 
         app = builder.build()
 
-        # Команды
         app.add_handler(CommandHandler("start", self.start))
         app.add_handler(CommandHandler("help", self.help))
         app.add_handler(CommandHandler("list", self.list_clients))
@@ -1711,16 +1622,9 @@ class TelegramBot:
         app.add_handler(CommandHandler("add", self.add))
         app.add_handler(CommandHandler("avatar", self.avatar))
 
-        # Callback-кнопки
         app.add_handler(CallbackQueryHandler(self.button_handler))
-
-        # Контакты (из Telegram)
         app.add_handler(MessageHandler(filters.CONTACT, self.handle_contact))
-
-        # Фото (визитки + аватарки)
         app.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
-
-        # Текстовые сообщения (поиск, email, FSM, reply-клавиатура)
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
 
         logger.info("✅ Бот запущен, начинаю polling...")
@@ -1730,7 +1634,6 @@ class TelegramBot:
 # ============ МОДУЛЬНЫЕ ФУНКЦИИ ============
 
 async def show_client_options(update, context, client):
-    """Показывает опции для клиента."""
     status_emoji = {'vip': '⭐', 'active': '✅', 'regular': '🔄', 'lead': '🆕', 'inactive': '⏸️'}.get(client.status, '📌')
     message = f"{status_emoji} *{client.first_name} {client.last_name}*\n\n"
     message += f"📞 {client.phone}\n"
@@ -1758,20 +1661,13 @@ async def show_client_options(update, context, client):
         ],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        message,
-        parse_mode='Markdown',
-        reply_markup=reply_markup,
-    )
+    await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
 
 
 async def send_telegram_message(chat_id, text):
-    """Отправка сообщения в Telegram."""
     token = settings.TELEGRAM_BOT_TOKEN
     if not token:
         return
-
     url = f'https://api.telegram.org/bot{token}/sendMessage'
     try:
         requests.post(url, json={
