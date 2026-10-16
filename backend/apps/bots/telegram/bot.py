@@ -160,6 +160,34 @@ class TelegramBot:
             reply_markup=reply_markup,
         )
 
+    async def list_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """/list — список клиентов с пагинацией (использует get_clients_list_message).
+
+        В отличие от list_clients (старая карточка с callback client_*),
+        этот метод формирует список с callback client_detail_* — при клике
+        открывается _handle_client_detail с аватаркой.
+        """
+        from asgiref.sync import sync_to_async
+
+        def _get():
+            return list(Client.objects.all().order_by('-created_at'))
+
+        clients = await sync_to_async(_get)()
+
+        if not clients:
+            await update.message.reply_text(
+                "📭 Клиентов пока нет.",
+                reply_markup=_main_reply_markup(),
+            )
+            return
+
+        message_text, keyboard = get_clients_list_message(clients, 1)
+        await update.message.reply_text(
+            message_text,
+            parse_mode='Markdown',
+            reply_markup=keyboard,
+        )
+
     async def _get_clients_list(self):
         from asgiref.sync import sync_to_async
         return await sync_to_async(lambda: list(Client.objects.all()[:10]))()
@@ -175,7 +203,7 @@ class TelegramBot:
         from asgiref.sync import sync_to_async
 
         if text in ('📋 Список', '📋 Список клиентов'):
-            await self.list_clients(update, context)
+            await self.list_command(update, context)
             return
         if text == '📊 Статистика':
             await self.stats(update, context)
@@ -969,7 +997,11 @@ class TelegramBot:
         await query.edit_message_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_client_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
-        """Полная карточка клиента с аватаркой через .read() (работает и для local, и для S3)."""
+        """Полная карточка клиента с аватаркой.
+
+        Отправка фото через .read() + BytesIO — работает и для local storage,
+        и для S3 (django-storages). Cloudflare/ngrok в цепочке не участвуют.
+        """
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -986,11 +1018,24 @@ class TelegramBot:
         card_text = get_client_card(client, show_avatar=False) + "\n\n_Выберите действие:_"
         keyboard = get_client_full_actions_keyboard(client.id)
 
-        if client.avatar and client.avatar.name:
+        has_avatar = bool(client.avatar and client.avatar.name)
+        logger.info(f"🖼️ _handle_client_detail: client_id={client_id}, has_avatar={has_avatar}")
+
+        if has_avatar:
             try:
-                photo_data = await sync_to_async(client.avatar.read)()
+                def _read_avatar():
+                    client.avatar.open('rb')
+                    try:
+                        return client.avatar.read()
+                    finally:
+                        client.avatar.close()
+
+                photo_data = await sync_to_async(_read_avatar)()
+                buf = BytesIO(photo_data)
+                buf.name = f'avatar_{client_id}.jpg'
+
                 await query.message.chat.send_photo(
-                    photo=BytesIO(photo_data),
+                    photo=buf,
                     caption=card_text,
                     parse_mode='Markdown',
                     reply_markup=keyboard,
@@ -999,14 +1044,20 @@ class TelegramBot:
                     await query.message.delete()
                 except Exception:
                     pass
+                logger.info(f"🖼️ _handle_client_detail: фото отправлено для client_id={client_id}")
             except Exception as e:
-                logger.error(f"❌ Ошибка отправки аватарки: {e}", exc_info=True)
-                await query.edit_message_text(card_text, parse_mode='Markdown', reply_markup=keyboard)
+                logger.error(f"❌ Ошибка отправки аватарки client_id={client_id}: {e}", exc_info=True)
+                try:
+                    await query.edit_message_text(card_text, parse_mode='Markdown', reply_markup=keyboard)
+                except Exception:
+                    pass
         else:
             await query.edit_message_text(card_text, parse_mode='Markdown', reply_markup=keyboard)
 
+    
+
     async def _handle_show_avatar(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
-        """Отправить аватарку клиента отдельным сообщением (через .read())."""
+        """Отправить аватарку клиента отдельным сообщением."""
         from asgiref.sync import sync_to_async
 
         query = update.callback_query
@@ -1016,94 +1067,38 @@ class TelegramBot:
             return Client.objects.filter(id=client_id).first()
 
         client = await sync_to_async(_get)()
-        if client and client.avatar and client.avatar.name:
-            caption = f"🖼️ *Аватарка*\n👤 {client.first_name} {client.last_name}"
-            try:
-                photo_data = await sync_to_async(client.avatar.read)()
-                await query.message.chat.send_photo(
-                    photo=BytesIO(photo_data),
-                    caption=caption,
-                    parse_mode='Markdown',
-                )
-            except Exception as e:
-                logger.error(f"❌ Ошибка отправки аватарки: {e}", exc_info=True)
-                await query.message.reply_text("❌ Не удалось отправить аватарку")
-        else:
+        if not (client and client.avatar and client.avatar.name):
             await query.message.reply_text("❌ У клиента нет аватарки")
+            return
 
-    async def _handle_show_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        from asgiref.sync import sync_to_async
+        caption = f"🖼️ *Аватарка*\n👤 {client.first_name} {client.last_name}"
+        try:
+            def _read_avatar():
+                client.avatar.open('rb')
+                try:
+                    return client.avatar.read()
+                finally:
+                    client.avatar.close()
 
-        query = update.callback_query
-        await query.answer()
+            photo_data = await sync_to_async(_read_avatar)()
+            buf = BytesIO(photo_data)
+            buf.name = f'avatar_{client_id}.jpg'
 
-        def _get_stats():
-            return {
-                'total': Client.objects.count(),
-                'vip': Client.objects.filter(status='vip').count(),
-                'active': Client.objects.filter(status='active').count(),
-                'regular': Client.objects.filter(status='regular').count(),
-                'lead': Client.objects.filter(status='lead').count(),
-                'events': ScheduledEvent.objects.filter(is_completed=False).count(),
-            }
+            await query.message.chat.send_photo(
+                photo=buf,
+                caption=caption,
+                parse_mode='Markdown',
+            )
+            logger.info(f"🖼️ _handle_show_avatar: фото отправлено для client_id={client_id}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка отправки аватарки client_id={client_id}: {e}", exc_info=True)
+            await query.message.reply_text("❌ Не удалось отправить аватарку")
 
-        s = await sync_to_async(_get_stats)()
-        response = (
-            f"📊 *Статистика CRM:*\n\n"
-            f"👥 Всего клиентов: *{s['total']}*\n\n"
-            "По статусам:\n"
-            f"⭐ VIP: {s['vip']}\n"
-            f"✅ Активные: {s['active']}\n"
-            f"🔄 Постоянные: {s['regular']}\n"
-            f"🆕 Лиды: {s['lead']}\n\n"
-            f"📅 Запланировано событий: {s['events']}"
-        )
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton("⬅️ Назад к списку", callback_data="back_to_list")]
-        ])
-        await query.edit_message_text(response, parse_mode='Markdown', reply_markup=keyboard)
-
-    async def _handle_show_birthdays(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        from asgiref.sync import sync_to_async
-
-        query = update.callback_query
-        await query.answer()
-
-        def _get():
-            return list(Client.objects.filter(birth_date__isnull=False))
-
-        all_clients = await sync_to_async(_get)()
-        today = timezone.now().date()
-        clients_list = []
-        for client in all_clients:
-            next_birthday = client.birth_date.replace(year=today.year)
-            if next_birthday < today:
-                next_birthday = next_birthday.replace(year=today.year + 1)
-            days_until = (next_birthday - today).days
-            if 0 <= days_until <= 7:
-                clients_list.append((client, days_until))
-
-        if clients_list:
-            response = "🎂 *Дни рождения в ближайшую неделю:*\n\n"
-            for client, days in sorted(clients_list, key=lambda x: x[1]):
-                status_emoji = {'vip': '⭐', 'active': '✅', 'regular': '🔄', 'lead': '🆕', 'inactive': '⏸️'}.get(client.status, '📌')
-                response += f"{status_emoji} *{client.first_name} {client.last_name}*\n"
-                response += f"   📞 {client.phone}\n"
-                if client.company:
-                    response += f"   🏢 {client.company}\n"
-                response += f"   📅 {client.birth_date.strftime('%d.%m')} (через {days} дн.)\n\n"
-        else:
-            response = "🎂 В ближайшую неделю нет дней рождения."
-
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton("⬅️ Назад к списку", callback_data="back_to_list")]
-        ])
-        await query.edit_message_text(response, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_show_events_calendar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Календарь событий на текущий месяц (inline callback)."""
         query = update.callback_query
         await query.answer()
-
         today = datetime.now()
         month, year = today.month, today.year
         keyboard = get_events_calendar_keyboard(month, year)
@@ -1113,6 +1108,13 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Ошибка показа календаря: {e}")
             await query.message.reply_text(text, parse_mode='Markdown', reply_markup=keyboard)
+
+    async def _handle_show_events_calendar_from_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        today = datetime.now()
+        month, year = today.month, today.year
+        keyboard = get_events_calendar_keyboard(month, year)
+        text = f"📅 *Календарь событий*\n{MONTHS_RU[month]} {year}\n\n• — есть события"
+        await update.message.reply_text(text, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_show_events_calendar_from_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         today = datetime.now()
@@ -1545,6 +1547,12 @@ class TelegramBot:
         )
 
     async def handle_contact(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка контакта из Telegram.
+
+        ВАЖНО: в PTB 21.x у объекта Contact НЕТ поля .photo —
+        аватарку из контакта получить нельзя. Пользователь может
+        загрузить фото через /avatar или отправить фото визитки.
+        """
         from asgiref.sync import sync_to_async
 
         contact = update.message.contact
@@ -1562,31 +1570,12 @@ class TelegramBot:
 
         client, created = await sync_to_async(_get_or_create)()
 
-        if contact.photo and not (client.avatar and client.avatar.name):
-            try:
-                photo_file = await contact.photo.get_file()
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
-                    tmp_path = tmp.name
-                    await photo_file.download_to_drive(tmp_path)
-
-                try:
-                    from django.core.files import File
-                    with open(tmp_path, 'rb') as f:
-                        await sync_to_async(client.avatar.save)(f'avatar_{client.id}.jpg', File(f), save=True)
-                    logger.info(f"✅ Аватарка из контакта сохранена для client_id={client.id}")
-                finally:
-                    try:
-                        os.unlink(tmp_path)
-                    except Exception:
-                        pass
-            except Exception as e:
-                logger.error(f"❌ Ошибка сохранения аватарки из контакта: {e}", exc_info=True)
-
         if created:
             await update.message.reply_text(
                 f"✅ Клиент добавлен!\n\n"
                 f"👤 {client.first_name} {client.last_name}\n"
-                f"📞 {client.phone}",
+                f"📞 {client.phone}\n\n"
+                f"💡 Чтобы загрузить аватарку — используйте /avatar {client.first_name}",
                 reply_markup=_main_reply_markup(),
             )
         else:
@@ -1596,7 +1585,6 @@ class TelegramBot:
                 f"📞 {client.phone}",
                 reply_markup=_main_reply_markup(),
             )
-
     # ============ ЗАПУСК ============
 
     def run_polling(self):
@@ -1614,7 +1602,7 @@ class TelegramBot:
 
         app.add_handler(CommandHandler("start", self.start))
         app.add_handler(CommandHandler("help", self.help))
-        app.add_handler(CommandHandler("list", self.list_clients))
+        app.add_handler(CommandHandler("list", self.list_command))
         app.add_handler(CommandHandler("find", self.find))
         app.add_handler(CommandHandler("events", self.events))
         app.add_handler(CommandHandler("birthdays", self.birthdays))
