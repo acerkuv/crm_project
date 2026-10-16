@@ -350,12 +350,19 @@ class CommandsMixin:
 
         # ============ EMAIL ============
 
-    async def handle_email_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Начало отправки email клиенту (callback action_ID_message)."""
+    async def handle_email_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int = None):
+        """Начало отправки email клиенту (callback action_ID_message).
+
+        client_id передаётся из _handle_action (из callback action_<id>_message).
+        Если не передан — берём из context.user_data (fallback для старых карточек).
+        """
         query = update.callback_query
         await query.answer()
 
-        client_id = context.user_data.get('selected_client_id')
+        # Если client_id не передан — fallback на user_data
+        if client_id is None:
+            client_id = context.user_data.get('selected_client_id')
+
         if not client_id:
             await query.edit_message_text("❌ Выберите клиента сначала.")
             return

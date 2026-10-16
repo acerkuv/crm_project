@@ -366,13 +366,20 @@ class ClientsMixin:
     # ============ ДЕЙСТВИЯ С КЛИЕНТОМ ============
 
     async def _handle_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int, action_type: str):
+        """Роутер быстрых действий с клиентом.
+
+        Вызывается из _button_handler_impl для callback'ов action_<id>_<type>.
+        client_id — из callback, action_type — тип действия.
+        """
         query = update.callback_query
         await query.answer()
 
+        # Позвонить — сразу отправляем контакт + логируем Interaction(call)
         if action_type == 'call':
             await self._handle_call_with_log(update, context, client_id)
             return
 
+        # Заметка — FSM: запрашиваем текст, сохраняем как Interaction(note)
         if action_type == 'note':
             context.user_data['note_client_id'] = client_id
             context.user_data['awaiting_note'] = True
@@ -397,11 +404,12 @@ class ClientsMixin:
             )
             return
 
+        # Email — начало отправки письма
         if action_type == 'message':
-            await self.handle_email_action(update, context)
+            await self.handle_email_action(update, context, client_id)
             return
 
-        # meeting, reminder, birthday, ai — в планирование (заглушка пока)
+        # meeting, reminder, birthday, ai — в планирование (заглушка до Шага 4)
         await self._handle_plan_start(update, context, client_id)
 
     async def _handle_call_with_log(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
