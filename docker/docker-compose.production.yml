@@ -113,6 +113,8 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=crm.settings.production
       - PYTHONUNBUFFERED=1
+    volumes:
+      - media_volume_prod:/app/media 
     depends_on:
       db:
         condition: service_healthy
