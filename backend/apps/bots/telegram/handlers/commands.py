@@ -10,6 +10,7 @@ from apps.clients.models import Client, ScheduledEvent
 from ..keyboards import get_months_keyboard, get_plan_action_keyboard
 from ..utils import get_clients_list_message
 from .helpers import main_reply_markup
+from .clients import show_client_options
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +210,7 @@ class CommandsMixin:
 
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         from apps.clients.models import Interaction
-        from ..bot import show_client_options
+        
         from django.db.models import Q
 
         text = update.message.text.strip()
@@ -346,3 +347,84 @@ class CommandsMixin:
             "🤔 Не понял команду. Используйте меню ниже или /help",
             reply_markup=main_reply_markup(),
         )
+
+        # ============ EMAIL ============
+
+    async def handle_email_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Начало отправки email клиенту (callback action_ID_message)."""
+        query = update.callback_query
+        await query.answer()
+
+        client_id = context.user_data.get('selected_client_id')
+        if not client_id:
+            await query.edit_message_text("❌ Выберите клиента сначала.")
+            return
+
+        client = await sync_to_async(Client.objects.get)(id=client_id)
+
+        if not client.email:
+            await query.edit_message_text(
+                f"❌ У клиента {client.first_name} {client.last_name} нет email.\n"
+                "Добавьте email через админку или отредактируйте клиента."
+            )
+            return
+
+        context.user_data['awaiting_email'] = {
+            'client_id': client_id,
+            'stage': 'subject',
+        }
+        await query.edit_message_text(
+            f"✉️ *Отправка письма*\n\n"
+            f"👤 Кому: {client.first_name} {client.last_name}\n"
+            f"📧 Email: {client.email}\n\n"
+            "Введите *тему* письма:",
+            parse_mode='Markdown',
+        )
+
+    async def _handle_email_subject(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка ввода темы письма."""
+        email_data = context.user_data['awaiting_email']
+        email_data['subject'] = update.message.text
+        email_data['stage'] = 'body'
+        await update.message.reply_text(
+            f"📝 Тема: {email_data['subject']}\n\n"
+            "Теперь введите *текст* письма:",
+            parse_mode='Markdown',
+        )
+
+    async def _handle_email_body(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка ввода тела письма и отправка."""
+        from django.conf import settings
+        from django.core.mail import send_mail
+        from apps.clients.models import Interaction
+
+        email_data = context.user_data['awaiting_email']
+        email_data['body'] = update.message.text
+        client = await sync_to_async(Client.objects.get)(id=email_data['client_id'])
+
+        try:
+            await sync_to_async(send_mail)(
+                subject=email_data['subject'],
+                message=email_data['body'],
+                from_email=settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER,
+                recipient_list=[client.email],
+                fail_silently=False,
+            )
+            await sync_to_async(Interaction.objects.create)(
+                client=client,
+                type='email',
+                content=f"Тема: {email_data['subject']}\n\n{email_data['body']}",
+                created_at=timezone.now(),
+                completed_at=timezone.now(),
+            )
+            await update.message.reply_text(
+                f"✅ Письмо отправлено!\n\n"
+                f"📧 Кому: {client.email}\n"
+                f"📝 Тема: {email_data['subject']}",
+                reply_markup=main_reply_markup(),
+            )
+        except Exception as e:
+            logger.error(f"Ошибка отправки email: {e}")
+            await update.message.reply_text(f"❌ Ошибка отправки: {e}", reply_markup=main_reply_markup())
+
+        context.user_data.pop('awaiting_email', None)
