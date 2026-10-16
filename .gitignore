@@ -45,3 +45,10 @@ crm_deploy_*.tar.gz
 crm_deploy_*.tar.gz.sha256
 .deploy_tmp/
 prod_snapshot_*.tar.gz
+
+# Local backups
+backups/
+
+# Local refactor scripts
+scripts/cleanup_bot.sh
+scripts/refactor_bot.sh
