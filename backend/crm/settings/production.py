@@ -12,10 +12,9 @@ EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
-# ============ GigaChat ============
-GIGACHAT_AUTH_KEY = os.environ.get('GIGACHAT_AUTH_KEY', '')
 
 # ============ GigaChat ============
+GIGACHAT_AUTH_KEY = os.environ.get('GIGACHAT_AUTH_KEY', '')
 
 # ============ Логирование ============
 LOGGING = {
@@ -31,15 +30,17 @@ LOGGING = {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
+        },
+    },
     'root': {
         'handlers': ['console'],
         'level': 'INFO',
+    },
     'loggers': {
         'httpx': {'level': 'WARNING', 'propagate': True},
         'httpcore': {'level': 'WARNING', 'propagate': True},
         'telegram': {'level': 'INFO', 'propagate': True},
         'telegram.ext': {'level': 'INFO', 'propagate': True},
         'telegram.request': {'level': 'WARNING', 'propagate': True},
+    },
 }
-
-
