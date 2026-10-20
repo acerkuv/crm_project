@@ -446,40 +446,283 @@ class EventsMixin:
             reply_markup=keyboard,
         )
 
-    # ============ ЗАГЛУШКИ (календарь событий — Шаг 4.5) ============
+     # ============ КАЛЕНДАРЬ СОБЫТИЙ ============
 
     async def _handle_event_month(self, update, context, month, year):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+        """Переключение месяца в календаре событий."""
+        query = update.callback_query
+        await query.answer()
+        keyboard = get_events_calendar_keyboard(month, year)
+        text = f"📅 *Календарь событий*\n{MONTHS_RU[month]} {year}\n\n• — есть события"
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"Ошибка показа календаря: {e}")
 
     async def _handle_event_today(self, update, context):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+        """Текущий месяц в календаре."""
+        query = update.callback_query
+        await query.answer()
+        today = datetime.now()
+        keyboard = get_events_calendar_keyboard(today.month, today.year)
+        text = f"📅 *Календарь событий*\n{MONTHS_RU[today.month]} {today.year}\n\n• — есть события"
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"Ошибка показа календаря: {e}")
 
     async def _handle_event_day(self, update, context, day, month, year):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+        """Показать 15-минутные слоты дня."""
+        from ..keyboards import get_event_day_keyboard
+        query = update.callback_query
+        await query.answer()
+        keyboard = get_event_day_keyboard(day, month, year)
+        text = f"📅 *{day} {MONTHS_RU[month]} {year}*\n\nВыберите время:"
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"Ошибка показа дня: {e}")
 
     async def _handle_event_hour(self, update, context, day, month, year, hour):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+        """Показать события на конкретный час."""
+        from ..keyboards import get_event_time_list_keyboard
+        from ..time_utils import to_user_time
+        query = update.callback_query
+        await query.answer()
+
+        def _get_events():
+            start = create_user_datetime(year, month, day, hour, 0)
+            end = create_user_datetime(year, month, day, hour, 59)
+            return list(ScheduledEvent.objects.filter(
+                scheduled_date__gte=start, scheduled_date__lte=end
+            ).order_by('scheduled_date'))
+
+        events = await sync_to_async(_get_events)()
+        events_by_time = {}
+        for e in events:
+            ut = to_user_time(e.scheduled_date)
+            key = ut.strftime('%H:%M')
+            events_by_time.setdefault(key, []).append(e)
+
+        # Если событий нет — показать слоты 15 минут
+        if not events:
+            keyboard = get_event_day_keyboard(day, month, year)
+            text = f"📅 *{day} {MONTHS_RU[month]} {year}*\n\nНет событий в {hour:02d}:00"
+            try:
+                await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+            except Exception as e:
+                logger.error(f"Ошибка: {e}")
+            return
+
+        # Показать события часа
+        time_str = f"{hour:02d}:00"
+        keyboard = get_event_time_list_keyboard(events_by_time, time_str, day, month, year)
+        text = f"📅 *События {day} {MONTHS_RU[month]} {year} в {hour:02d}:00*\n\n"
+        for time_key in sorted(events_by_time.keys()):
+            for e in events_by_time[time_key]:
+                status = "✅" if e.is_completed else "🔴"
+                text += f"{status} {time_key} — {e.title}\n"
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
 
     async def _handle_event_hour_empty(self, update, context, day, month, year, hour):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+        """Пустой час — показать слоты 15 минут для планирования."""
+        from ..keyboards import get_event_day_keyboard
+        query = update.callback_query
+        await query.answer()
+        keyboard = get_event_day_keyboard(day, month, year)
+        text = f"📅 *{day} {MONTHS_RU[month]} {year}*\n\nВыберите время:"
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
 
     async def _handle_event_time_slot(self, update, context, day, month, year, hour, minute):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+        """Слот 15 минут — события или предложение запланировать."""
+        query = update.callback_query
+        await query.answer()
+
+        def _get_events():
+            start = create_user_datetime(year, month, day, hour, minute)
+            end = create_user_datetime(year, month, day, hour, minute)
+            # +59 секунд
+            from datetime import timedelta
+            end = end + timedelta(seconds=59)
+            return list(ScheduledEvent.objects.filter(
+                scheduled_date__gte=start, scheduled_date__lte=end
+            ).order_by('scheduled_date'))
+
+        events = await sync_to_async(_get_events)()
+        time_str = f"{hour:02d}:{minute:02d}"
+
+        keyboard = []
+        if events:
+            text = f"📅 *{day} {MONTHS_RU[month]} {year} в {time_str}*\n\n"
+            text += f"🔴 Занято: {len(events)} событий\n\n"
+            for e in events:
+                status = "✅" if e.is_completed else "🔴"
+                text += f"{status} *{e.title}*\n"
+                text += f"   👤 {e.client.first_name} {e.client.last_name}\n"
+                if e.description:
+                    text += f"   📝 {e.description[:80]}\n"
+                text += "\n"
+                keyboard.append([InlineKeyboardButton(
+                    f"🔍 {e.title[:30]}", callback_data=f"event_detail_{e.id}"
+                )])
+            keyboard.append([InlineKeyboardButton(
+                "➕ Запланировать ещё",
+                callback_data=f"event_plan_at_{day}_{month}_{year}_{hour}_{minute}"
+            )])
+        else:
+            text = f"📅 *{day} {MONTHS_RU[month]} {year} в {time_str}*\n\n⬜ Свободно"
+            keyboard.append([InlineKeyboardButton(
+                "➕ Запланировать",
+                callback_data=f"event_plan_at_{day}_{month}_{year}_{hour}_{minute}"
+            )])
+
+        keyboard.append([
+            InlineKeyboardButton("⬅️ К дню", callback_data=f"event_back_to_day_{day}_{month}_{year}"),
+            InlineKeyboardButton("📅 Календарь", callback_data=f"event_back_to_calendar_{month}_{year}"),
+        ])
+        keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")])
+
+        reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+        except Exception as e:
+            logger.error(f"Ошибка слота: {e}")
 
     async def _handle_event_detail(self, update, context, event_id):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+        """Детали события."""
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return ScheduledEvent.objects.filter(id=event_id).first()
+
+        event = await sync_to_async(_get)()
+        if not event:
+            await query.edit_message_text("❌ Событие не найдено")
+            return
+
+        from ..time_utils import to_user_time
+        ut = to_user_time(event.scheduled_date)
+        time_str = ut.strftime('%d.%m.%Y %H:%M')
+        status = "✅ Выполнено" if event.is_completed else "⏳ Ожидает"
+
+        text = (
+            f"📌 *{event.title}*\n\n"
+            f"👤 {event.client.first_name} {event.client.last_name}\n"
+            f"📞 {event.client.phone}\n"
+            f"📅 {time_str}\n"
+            f"📊 {status}\n"
+        )
+        if event.description:
+            text += f"\n📝 {event.description}\n"
+
+        keyboard = []
+        if not event.is_completed:
+            keyboard.append([InlineKeyboardButton(
+                "✅ Отметить выполненным", callback_data=f"event_complete_{event.id}"
+            )])
+        keyboard.append([
+            InlineKeyboardButton("⬅️ К дню", callback_data=f"event_back_to_day_{ut.day}_{ut.month}_{ut.year}"),
+            InlineKeyboardButton("📅 Календарь", callback_data=f"event_back_to_calendar_{ut.month}_{ut.year}"),
+        ])
+        keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")])
+
+        reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+        except Exception as e:
+            logger.error(f"Ошибка деталей: {e}")
 
     async def _handle_event_complete(self, update, context, event_id):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+        """Отметить событие выполненным."""
+        query = update.callback_query
+        await query.answer("✅ Событие выполнено")
+
+        def _complete():
+            event = ScheduledEvent.objects.filter(id=event_id).first()
+            if event:
+                event.is_completed = True
+                event.completed_at = timezone.now()
+                event.save()
+            return event
+
+        event = await sync_to_async(_complete)()
+        if not event:
+            await query.edit_message_text("❌ Событие не найдено")
+            return
+
+        # Показать детали с обновлённым статусом
+        from ..time_utils import to_user_time
+        ut = to_user_time(event.scheduled_date)
+        text = (
+            f"✅ *Выполнено*\n\n"
+            f"📌 {event.title}\n"
+            f"👤 {event.client.first_name} {event.client.last_name}\n"
+            f"📅 {ut.strftime('%d.%m.%Y %H:%M')}"
+        )
+        keyboard = [
+            [InlineKeyboardButton("⬅️ К дню", callback_data=f"event_back_to_day_{ut.day}_{ut.month}_{ut.year}")],
+            [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
 
     async def _handle_event_plan_at(self, update, context, day, month, year, hour=9, minute=0):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+        """Запланировать событие на выбранное время — начало FSM."""
+        query = update.callback_query
+        await query.answer()
+
+        # Сохраняем выбранное время в context
+        context.user_data['event_scheduled_date'] = create_user_datetime(year, month, day, hour, minute)
+        context.user_data['finding'] = True
+
+        from ..time_utils import format_user_time
+        dt = create_user_datetime(year, month, day, hour, minute)
+        time_str = format_user_time(dt)
+
+        text = (
+            f"📅 *Планирование события*\n\n"
+            f"📅 {time_str} (MSK)\n\n"
+            f"🔍 Введите имя, телефон или компанию клиента:"
+        )
+        keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="plan_cancel")]]
+        reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+        except Exception as e:
+            logger.error(f"Ошибка планирования: {e}")
 
     async def _handle_event_back_to_calendar(self, update, context, month, year):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+        """Назад к календарю событий."""
+        query = update.callback_query
+        await query.answer()
+        keyboard = get_events_calendar_keyboard(month, year)
+        text = f"📅 *Календарь событий*\n{MONTHS_RU[month]} {year}\n\n• — есть события"
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
 
     async def _handle_event_back_to_day(self, update, context, day, month, year):
-        await update.callback_query.answer("⚠️ Скоро", show_alert=True)
+        """Назад к 15-минутным слотам дня."""
+        query = update.callback_query
+        await query.answer()
+        from ..keyboards import get_event_day_keyboard
+        keyboard = get_event_day_keyboard(day, month, year)
+        text = f"📅 *{day} {MONTHS_RU[month]} {year}*\n\nВыберите время:"
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"Ошибка: {e}")
 
 
 # ============ МОДУЛЬНЫЕ ФУНКЦИИ ============
