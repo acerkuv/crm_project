@@ -94,7 +94,8 @@ class CommandsMixin:
 
         message = "📅 *Запланированные события:*\n\n"
         for event in events:
-            date_str = event.scheduled_date.strftime("%d.%m %H:%M")
+            from ..time_utils import to_user_time
+            date_str = to_user_time(event.scheduled_date).strftime("%d.%m %H:%M")
             status = "✅" if event.is_completed else "⏳"
             message += f"{status} *{event.title}*\n"
             message += f"   👤 {event.client.first_name} {event.client.last_name}\n"

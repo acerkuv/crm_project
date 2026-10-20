@@ -1,6 +1,7 @@
 """Mixin: планирование событий, дни рождения, календарь."""
 import logging
 from datetime import datetime
+from ..time_utils import to_user_time
 
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -190,7 +191,7 @@ class EventsMixin:
                 )
         elif query.data.startswith('schedule_birthday'):
             await query.edit_message_text(
-                f"✅ Поздравление запланировано на {event.scheduled_date.strftime('%d.%m.%Y')}\n\n"
+                f"✅ Поздравление запланировано на {to_user_time(event.scheduled_date).strftime('%d.%m.%Y')}\n\n"
                 f"👤 {event.client.first_name} {event.client.last_name}\n"
                 f"📝 {event.description}"
             )
@@ -388,7 +389,7 @@ class EventsMixin:
                 f"✅ *Событие запланировано!*\n\n"
                 f"👤 {client.first_name} {client.last_name}\n"
                 f"📝 {description or 'Событие'}\n"
-                f"📅 {scheduled_date.strftime('%d.%m.%Y %H:%M')}\n"
+                f"📅 {to_user_time(scheduled_date).strftime('%d.%m.%Y %H:%M')}\n"
                 f"📌 Тип: {action_names.get(action, 'событие')}\n\n"
                 f"Я напомню вам об этом!",
                 parse_mode='Markdown',

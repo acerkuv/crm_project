@@ -3,6 +3,7 @@ from .time_utils import USER_TIMEZONE, to_user_time
 from datetime import datetime
 from calendar import monthrange
 import logging
+from .time_utils import to_user_time
 
 # Русские названия месяцев
 MONTHS_RU = {
@@ -156,7 +157,7 @@ def get_event_day_keyboard(day, month, year):
     # Создаем словарь событий по времени
     events_by_time = {}
     for event in events:
-        time_key = event.scheduled_date.strftime("%H:%M")
+        time_key = to_user_time(event.scheduled_date).strftime("%H:%M")
         if time_key not in events_by_time:
             events_by_time[time_key] = []
         events_by_time[time_key].append(event)
@@ -443,7 +444,7 @@ def get_event_list_keyboard(events, day, month, year):
     
     if events:
         for event in events:
-            time_str = event.scheduled_date.strftime("%H:%M")
+            time_str = to_user_time(event.scheduled_date).strftime("%H:%M")
             keyboard.append([
                 {
                     "text": f"🔴 {time_str} - {event.title[:30]}",
