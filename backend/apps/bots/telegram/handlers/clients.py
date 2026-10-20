@@ -426,6 +426,7 @@ class ClientsMixin:
             await query.message.reply_text("❌ У клиента нет телефона.")
             return
 
+        # Логируем Interaction(call)
         try:
             await sync_to_async(Interaction.objects.create)(
                 client=client,
@@ -436,15 +437,12 @@ class ClientsMixin:
         except Exception as e:
             logger.error(f"Ошибка создания Interaction(call): {e}")
 
+        # Отправляем номер как кликабельный текст (без reply_contact)
         await query.message.reply_text(
             f"📞 *Позвонить: {client.first_name} {client.last_name}*\n\n"
-            f"Нажмите на номер ниже — телефон предложит позвонить:",
+            f"`{client.phone}`\n\n"
+            f"_Нажмите на номер, чтобы скопировать или позвонить_",
             parse_mode='Markdown',
-        )
-        await query.message.reply_contact(
-            phone_number=client.phone,
-            first_name=client.first_name,
-            last_name=client.last_name or '',
         )
 
     async def handle_call_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -464,13 +462,9 @@ class ClientsMixin:
 
         await query.message.reply_text(
             f"📞 *Позвонить: {client.first_name} {client.last_name}*\n\n"
-            f"Нажмите на номер ниже — телефон предложит позвонить:",
+            f"`{client.phone}`\n\n"
+            f"_Нажмите на номер, чтобы скопировать или позвонить_",
             parse_mode='Markdown',
-        )
-        await query.message.reply_contact(
-            phone_number=client.phone,
-            first_name=client.first_name,
-            last_name=client.last_name or '',
         )
 
 
