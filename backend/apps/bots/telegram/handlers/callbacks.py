@@ -135,6 +135,8 @@ class CallbacksMixin:
             await self._handle_show_events_calendar(update, context)
             return
 
+        # ============ КАЛЕНДАРЬ СОБЫТИЙ ============
+
         if data.startswith('event_month_'):
             parts = data.split('_')
             await self._handle_event_month(update, context, int(parts[2]), int(parts[3]))
@@ -149,14 +151,26 @@ class CallbacksMixin:
             await self._handle_event_day(update, context, int(parts[2]), int(parts[3]), int(parts[4]))
             return
 
+        # Слот с событием (get_event_day_keyboard → event_time_D_M_Y_H_M)
+        if data.startswith('event_time_') and not data.startswith('event_time_slot_'):
+            parts = data.split('_')
+            day = int(parts[2]); month = int(parts[3]); year = int(parts[4])
+            hour = int(parts[5]); minute = int(parts[6])
+            await self._handle_event_time_slot(update, context, day, month, year, hour, minute)
+            return
+
+        # Пустой слот (get_event_day_keyboard → event_empty_D_M_Y_H_M)
+        if data.startswith('event_empty_'):
+            parts = data.split('_')
+            day = int(parts[2]); month = int(parts[3]); year = int(parts[4])
+            hour = int(parts[5]); minute = int(parts[6])
+            await self._handle_event_hour_empty(update, context, day, month, year, hour)
+            return
+
+        # Старый формат (если где-то остался)
         if data.startswith('event_hour_empty_'):
             parts = data.split('_')
             await self._handle_event_hour_empty(update, context, int(parts[3]), int(parts[4]), int(parts[5]), int(parts[6]))
-            return
-
-        if data.startswith('event_hour_'):
-            parts = data.split('_')
-            await self._handle_event_hour(update, context, int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5]))
             return
 
         if data.startswith('event_time_slot_'):
