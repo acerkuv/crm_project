@@ -164,7 +164,7 @@ class CallbacksMixin:
             parts = data.split('_')
             day = int(parts[2]); month = int(parts[3]); year = int(parts[4])
             hour = int(parts[5]); minute = int(parts[6])
-            await self._handle_event_hour_empty(update, context, day, month, year, hour)
+            await self._handle_event_time_slot(update, context, day, month, year, hour, minute)
             return
 
         # Старый формат (если где-то остался)
