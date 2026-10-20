@@ -134,6 +134,8 @@ def send_due_reminders():
             return "OWNER_CHAT_ID не задан"
 
         token = settings.TELEGRAM_BOT_TOKEN
+        proxy_url = os.environ.get('TELEGRAM_PROXY_URL', '')
+        proxies = {'http': proxy_url, 'https': proxy_url} if proxy_url else None
         sent_count = 0
         errors = 0
 
@@ -157,6 +159,7 @@ def send_due_reminders():
                         'parse_mode': 'Markdown',
                     },
                     timeout=10,
+                    proxies=proxies,
                 )
                 if response.status_code == 200:
                     event.is_completed = True
