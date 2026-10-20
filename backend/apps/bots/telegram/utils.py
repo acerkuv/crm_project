@@ -60,6 +60,25 @@ def get_client_card(client, show_avatar=True, compact=False):
                     card += f"• {date_str}: {content}\n"
         except Exception:
             pass
+
+        # Запланированные события
+        try:
+            from django.utils import timezone as tz
+            now = tz.now()
+            upcoming = client.scheduled_events.filter(
+                is_completed=False,
+                scheduled_date__gte=now,
+            ).order_by('scheduled_date')[:5]
+
+            if upcoming:
+                card += "\n\n📅 *Запланированные события:*\n"
+                from apps.bots.telegram.time_utils import to_user_time
+                for ev in upcoming:
+                    ut = to_user_time(ev.scheduled_date)
+                    date_str = ut.strftime('%d.%m %H:%M')
+                    card += f"🔴 {date_str} — {ev.title[:50]}\n"
+        except Exception:
+            pass
     
     return card
 
