@@ -280,13 +280,9 @@ class CommandsMixin:
 
         # FSM: описание события
         if context.user_data.get('awaiting_event_description'):
-            client_id = context.user_data.get('event_description_client_id')
-            action = context.user_data.get('event_description_action')
-
             context.user_data.pop('awaiting_event_description', None)
             context.user_data['event_description_text'] = text
-            context.user_data['planning_client_id'] = client_id
-            context.user_data['planning_action_type'] = action
+            # planning_client_id и planning_action_type УЖЕ установлены в _handle_plan_action
 
             keyboard = get_months_keyboard()
             await update.message.reply_text(
