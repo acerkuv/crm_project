@@ -13,6 +13,7 @@ EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
 
+
 # ============ GigaChat ============
 GIGACHAT_AUTH_KEY = os.environ.get('GIGACHAT_AUTH_KEY', '')
 
@@ -44,3 +45,4 @@ LOGGING = {
         'telegram.request': {'level': 'WARNING', 'propagate': True},
     },
 }
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
