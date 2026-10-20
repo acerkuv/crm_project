@@ -337,8 +337,3 @@ class TelegramBot(PhotosMixin, CommandsMixin, ClientsMixin, EventsMixin):
         logger.info("✅ Бот запущен, начинаю polling...")
         app.run_polling(allowed_updates=Update.ALL_TYPES)
 
-
-# ============ МОДУЛЬНЫЕ ФУНКЦИИ ============
-
-    except Exception as e:
-        logger.error(f"Ошибка отправки: {e}")
