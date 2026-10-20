@@ -104,3 +104,75 @@ def check_birthdays():
     except Exception as e:
         logger.error(f"❌ Ошибка проверки дней рождения: {e}")
         return f"Ошибка: {str(e)}"
+
+
+
+
+@shared_task
+def send_due_reminders():
+    """
+    Отправляет напоминания о ScheduledEvent, у которых наступило время.
+    Работает каждую минуту (или раз в N минут — настраивается в PeriodicTask).
+    """
+    try:
+        from apps.clients.models import ScheduledEvent
+
+        now = timezone.now()
+        # События, у которых наступило время, но ещё не выполнены
+        events = ScheduledEvent.objects.filter(
+            scheduled_date__lte=now,
+            is_completed=False,
+        ).order_by('scheduled_date')[:50]
+
+        if not events.exists():
+            logger.debug("📭 Нет событий для напоминания")
+            return "Нет событий"
+
+        owner_chat_id = getattr(settings, 'OWNER_CHAT_ID', None)
+        if not owner_chat_id:
+            logger.warning("⚠️ OWNER_CHAT_ID не задан — напоминания не отправляются")
+            return "OWNER_CHAT_ID не задан"
+
+        token = settings.TELEGRAM_BOT_TOKEN
+        sent_count = 0
+        errors = 0
+
+        for event in events:
+            text = (
+                f"🔔 *Напоминание*\n\n"
+                f"📌 {event.title}\n"
+                f"👤 {event.client.first_name} {event.client.last_name}\n"
+                f"📞 {event.client.phone}\n"
+                f"📅 {event.scheduled_date.strftime('%d.%m.%Y %H:%M')}\n"
+            )
+            if event.description:
+                text += f"📝 {event.description[:200]}\n"
+
+            try:
+                response = requests.post(
+                    f'https://api.telegram.org/bot{token}/sendMessage',
+                    json={
+                        'chat_id': owner_chat_id,
+                        'text': text,
+                        'parse_mode': 'Markdown',
+                    },
+                    timeout=10,
+                )
+                if response.status_code == 200:
+                    event.is_completed = True
+                    event.completed_at = now
+                    event.save(update_fields=['is_completed', 'completed_at'])
+                    sent_count += 1
+                    logger.info(f"✅ Напоминание отправлено: {event.title} (client_id={event.client_id})")
+                else:
+                    errors += 1
+                    logger.error(f"❌ Telegram API {response.status_code}: {response.text[:200]}")
+            except Exception as e:
+                errors += 1
+                logger.error(f"❌ Ошибка отправки напоминания {event.id}: {e}")
+
+        return f"Отправлено: {sent_count}, ошибок: {errors}"
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка в send_due_reminders: {e}", exc_info=True)
+        return f"Ошибка: {e}"

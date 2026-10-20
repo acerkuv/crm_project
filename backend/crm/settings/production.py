@@ -46,3 +46,5 @@ LOGGING = {
     },
 }
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
+# ============ Напоминания ============
+OWNER_CHAT_ID = os.environ.get('OWNER_CHAT_ID', '')
