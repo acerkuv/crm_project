@@ -3,9 +3,11 @@ import logging
 import re
 from datetime import datetime
 
+
 from telegram import Update
 from telegram.ext import ContextTypes
 from django.utils import timezone
+from django.conf import settings
 from asgiref.sync import sync_to_async
 
 from apps.clients.models import Client, ScheduledEvent
