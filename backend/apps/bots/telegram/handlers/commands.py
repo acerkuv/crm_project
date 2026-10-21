@@ -209,12 +209,14 @@ class CommandsMixin:
 
     # ============ ОБРАБОТКА ТЕКСТА ============
 
-    async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None):
         from apps.clients.models import Interaction
-        
         from django.db.models import Q
 
-        text = update.message.text.strip()
+        if text is None:
+            text = update.message.text.strip()
+        else:
+            text = text.strip()
 
         # Reply-кнопки
         if text in ('📋 Список', '📋 Список клиентов'):

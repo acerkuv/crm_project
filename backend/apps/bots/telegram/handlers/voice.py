@@ -43,9 +43,9 @@ class VoiceMixin:
                 parse_mode='Markdown',
             )
 
-            # Передаём в handle_text как будто пользователь ввёл текст
-            update.message.text = text
-            await self.handle_text(update, context)
+            
+            # Передаём распознанный текст в handle_text
+            await self.handle_text(update, context, text=text)
 
         except Exception as e:
             logger.error(f"Ошибка обработки голосового: {e}", exc_info=True)
