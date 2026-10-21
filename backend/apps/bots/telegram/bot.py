@@ -34,6 +34,7 @@ from .handlers.commands import CommandsMixin
 from .handlers.clients import ClientsMixin
 from .handlers.events import EventsMixin
 from .handlers.callbacks import CallbacksMixin
+from .handlers.voice import VoiceMixin
 from .handlers.helpers import main_reply_markup
 
 from apps.bots.telegram.keyboards import (
@@ -82,7 +83,7 @@ logger = logging.getLogger(__name__)
 
 
 
-class TelegramBot(PhotosMixin, CommandsMixin, ClientsMixin, EventsMixin, CallbacksMixin):
+class TelegramBot(PhotosMixin, CommandsMixin, ClientsMixin, EventsMixin, CallbacksMixin, VoiceMixin):
     def __init__(self):
         self.token = settings.TELEGRAM_BOT_TOKEN
         logger.info("🤖 Бот инициализирован")
@@ -115,6 +116,7 @@ class TelegramBot(PhotosMixin, CommandsMixin, ClientsMixin, EventsMixin, Callbac
         app.add_handler(CallbackQueryHandler(self.button_handler))
         app.add_handler(MessageHandler(filters.CONTACT, self.handle_contact))
         app.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
+        app.add_handler(MessageHandler(filters.VOICE, self.handle_voice))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
 
         logger.info("✅ Бот запущен, начинаю polling...")
