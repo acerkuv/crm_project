@@ -311,6 +311,14 @@ class CommandsMixin:
                 context.user_data['awaiting_plan_client'] = True
             return
 
+        # ============ «ЧТО У МЕНЯ СЕГОДНЯ?» ============
+        if any(phrase in text_lower for phrase in (
+            'что у меня', 'события на', 'что сегодня', 'что завтра',
+            'план на', 'дела на', 'события сегодня', 'события завтра',
+        )):
+            await self._handle_today_events(update, context, text)
+            return
+
         # ============ ЕСТЕСТВЕННЫЕ КОМАНДЫ ============
         # Поиск: "найди X", "поиск X"
         for prefix in ('найди ', 'найти ', 'поиск ', 'ищи ', 'найдите '):
@@ -719,6 +727,8 @@ class CommandsMixin:
             reply_markup=main_reply_markup(),
         )
 
+    
+
     # ============ EMAIL ============
 
     async def handle_email_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int = None):
@@ -758,6 +768,83 @@ class CommandsMixin:
             f"📝 Тема: {email_data['subject']}\n\nТеперь введите *текст* письма:",
             parse_mode='Markdown',
         )
+
+
+    async def _handle_today_events(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """«Что у меня сегодня?» — события на день (текстом + голосом)."""
+        from datetime import date, timedelta
+        from ..time_utils import to_user_time
+
+        target_date = date.today()
+        text_lower = text.lower()
+
+        if 'завтра' in text_lower:
+            target_date = date.today() + timedelta(days=1)
+        elif 'послезавтра' in text_lower:
+            target_date = date.today() + timedelta(days=2)
+        else:
+            months_ru = {
+                'января': 1, 'янв': 1, 'февраля': 2, 'фев': 2,
+                'марта': 3, 'мар': 3, 'апреля': 4, 'апр': 4,
+                'мая': 5, 'май': 5, 'июня': 6, 'июн': 6,
+                'июля': 7, 'июл': 7, 'августа': 8, 'авг': 8,
+                'сентября': 9, 'сен': 9, 'октября': 10, 'окт': 10,
+                'ноября': 11, 'ноя': 11, 'декабря': 12, 'дек': 12,
+            }
+            for month_name, month_num in months_ru.items():
+                m = re.search(r'(\d{1,2})\s+' + month_name, text_lower)
+                if m:
+                    day = int(m.group(1))
+                    year = date.today().year
+                    if month_num < date.today().month:
+                        year += 1
+                    try:
+                        target_date = date(year, month_num, day)
+                    except ValueError:
+                        pass
+                    break
+
+        def _get_events():
+            events = list(ScheduledEvent.objects.filter(is_completed=False).order_by('scheduled_date'))
+            result = []
+            for e in events:
+                user_dt = to_user_time(e.scheduled_date)
+                if user_dt.date() == target_date:
+                    result.append(e)
+            return result
+
+        events = await sync_to_async(_get_events)()
+        date_str = target_date.strftime('%d.%m.%Y')
+
+        if not events:
+            await update.message.reply_text(f"📅 На {date_str} событий нет.", reply_markup=main_reply_markup())
+            return
+
+        text_reply = f"📅 *События на {date_str}:*\n\n"
+        for e in events:
+            ut = to_user_time(e.scheduled_date)
+            time_str = ut.strftime('%H:%M')
+            text_reply += f"🔴 {time_str} — {e.title}\n"
+            text_reply += f"   👤 {e.client.first_name} {e.client.last_name}\n"
+        await update.message.reply_text(text_reply, parse_mode='Markdown', reply_markup=main_reply_markup())
+
+        try:
+            voice_text = f"На {date_str} {len(events)} событий. "
+            for e in events[:5]:
+                ut = to_user_time(e.scheduled_date)
+                time_str = ut.strftime('%H часов %M минут') if ut.minute else ut.strftime('%H часов')
+                voice_text += f"В {time_str} {e.title}. "
+            if len(events) > 5:
+                voice_text += f"И ещё {len(events) - 5} событий."
+
+            audio = await self._speechkit_tts(voice_text)
+            if audio:
+                from io import BytesIO
+                buf = BytesIO(audio)
+                buf.name = 'today_events.ogg'
+                await update.message.reply_voice(voice=buf)
+        except Exception as e:
+            logger.error(f"Ошибка TTS: {e}", exc_info=True)
 
     async def _handle_email_body(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         from django.conf import settings
