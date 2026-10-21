@@ -278,7 +278,6 @@ def get_client_full_actions_keyboard(client_id):
             ],
             [
                 {"text": "📅 План", "callback_data": f"plan_{client_id}"},
-                {"text": "🎯 Хобби", "callback_data": f"set_hobby_{client_id}"},
                 {"text": "🖼️ Аватарка", "callback_data": f"show_avatar_{client_id}"}
             ],
             [
