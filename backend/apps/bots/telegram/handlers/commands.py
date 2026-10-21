@@ -279,12 +279,71 @@ class CommandsMixin:
                 await update.message.reply_text(f"❌ Ошибка: {e}", reply_markup=main_reply_markup())
             return
 
-        # FSM: описание события
+                # FSM: описание события
         if context.user_data.get('awaiting_event_description'):
             context.user_data.pop('awaiting_event_description', None)
             context.user_data['event_description_text'] = text
-            # planning_client_id и planning_action_type УЖЕ установлены в _handle_plan_action
 
+            # Если время УЖЕ выбрано (через event_empty_* / event_plan_at_*) —
+            # создаём событие СРАЗУ, без повторного календаря
+            scheduled_date = context.user_data.get('event_scheduled_date')
+            if scheduled_date:
+                client_id = context.user_data.get('planning_client_id')
+                action = context.user_data.get('planning_action_type', 'custom')
+
+                from apps.clients.models import ScheduledEvent
+                from asgiref.sync import sync_to_async
+
+                def _get_client():
+                    return Client.objects.filter(id=client_id).first()
+
+                client = await sync_to_async(_get_client)()
+                if not client:
+                    await update.message.reply_text("❌ Клиент не найден", reply_markup=main_reply_markup())
+                    return
+
+                try:
+                    event = await sync_to_async(ScheduledEvent.objects.create)(
+                        client=client,
+                        title=text[:100],
+                        description=text,
+                        event_type=action,
+                        scheduled_date=scheduled_date,
+                        is_completed=False,
+                    )
+
+                    action_names = {
+                        'call': '📞 звонок',
+                        'meeting': '📅 встречу',
+                        'birthday': '🎂 поздравление',
+                        'reminder': '🔔 напоминание',
+                        'custom': '📝 событие',
+                    }
+
+                    from ..time_utils import format_user_time
+                    time_str = format_user_time(scheduled_date)
+
+                    await update.message.reply_text(
+                        f"✅ *Событие запланировано!*\n\n"
+                        f"👤 {client.first_name} {client.last_name}\n"
+                        f"📝 {text}\n"
+                        f"📅 {time_str} (MSK)\n"
+                        f"📌 Тип: {action_names.get(action, 'событие')}\n\n"
+                        f"Я напомню вам об этом!",
+                        parse_mode='Markdown',
+                        reply_markup=main_reply_markup(),
+                    )
+                except Exception as e:
+                    logger.error(f"Ошибка создания события: {e}", exc_info=True)
+                    await update.message.reply_text(f"❌ Ошибка: {e}", reply_markup=main_reply_markup())
+
+                # Очищаем состояние
+                for key in ('planning_client_id', 'planning_action_type',
+                            'event_scheduled_date', 'event_description_text'):
+                    context.user_data.pop(key, None)
+                return
+
+            # Иначе — старый путь через календарь
             keyboard = get_months_keyboard()
             await update.message.reply_text(
                 f"📝 Описание: {text[:80]}\n\n"
