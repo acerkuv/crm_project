@@ -50,7 +50,9 @@ class CommandsMixin:
             "📞 *Звонки:*\n"
             "В карточке клиента нажми '📞 Позвонить' — телефон станет кликабельным\n\n"
             "✉️ *Email:*\n"
-            "В карточке клиента нажми '✉️ Написать' — бот отправит письмо",
+            "В карточке клиента нажми '✉️ Написать' — бот отправит письмо\n\n"
+            "🎤 *Голосовые команды:*\n"
+            "«Найди Ивана», «Список клиентов», «Статистика», «События», «Помощь»",
             reply_markup=main_reply_markup(),
         )
 
@@ -94,8 +96,7 @@ class CommandsMixin:
 
         message = "📅 *Запланированные события:*\n\n"
         for event in events:
-            from ..time_utils import to_user_time
-            date_str = to_user_time(event.scheduled_date).strftime("%d.%m %H:%M")
+            date_str = event.scheduled_date.strftime("%d.%m %H:%M")
             status = "✅" if event.is_completed else "⏳"
             message += f"{status} *{event.title}*\n"
             message += f"   👤 {event.client.first_name} {event.client.last_name}\n"
@@ -218,7 +219,7 @@ class CommandsMixin:
         else:
             text = text.strip()
 
-        # Reply-кнопки
+        # ============ 0. REPLY-КЛАВИАТУРА ============
         if text in ('📋 Список', '📋 Список клиентов'):
             await self.list_command(update, context)
             return
@@ -248,7 +249,61 @@ class CommandsMixin:
             await update.message.reply_text("❌ Отменено", reply_markup=main_reply_markup())
             return
 
-        # FSM: заметка
+        # ============ ЕСТЕСТВЕННЫЕ КОМАНДЫ (голос/текст) ============
+        text_lower = text.lower()
+
+        # Поиск: "найди X", "поиск X", "найти X"
+        for prefix in ('найди ', 'найти ', 'поиск ', 'ищи ', 'найдите '):
+            if text_lower.startswith(prefix):
+                query_text = text[len(prefix):].strip()
+                if query_text:
+                    def _search(t):
+                        return list(
+                            Client.objects.filter(
+                                Q(first_name__icontains=t) |
+                                Q(last_name__icontains=t) |
+                                Q(phone__icontains=t) |
+                                Q(company__icontains=t) |
+                                Q(email__icontains=t)
+                            )
+                        )
+
+                    clients = await sync_to_async(_search)(query_text)
+                    if clients:
+                        await show_client_options(update, context, clients[0])
+                    else:
+                        await update.message.reply_text(
+                            f"❌ Клиент «{query_text}» не найден",
+                            reply_markup=main_reply_markup(),
+                        )
+                    return
+
+        # Список: "список", "клиенты", "все клиенты"
+        if any(word in text_lower for word in ('список', 'клиенты', 'все клиенты')):
+            await self.list_command(update, context)
+            return
+
+        # Статистика
+        if 'статистика' in text_lower or text_lower == 'стат':
+            await self.stats(update, context)
+            return
+
+        # События
+        if 'события' in text_lower or 'календарь' in text_lower:
+            await self._handle_show_events_calendar_from_message(update, context)
+            return
+
+        # Дни рождения
+        if 'день рождения' in text_lower or 'дни рождения' in text_lower:
+            await self.birthdays(update, context)
+            return
+
+        # Помощь
+        if 'помощь' in text_lower or 'помоги' in text_lower:
+            await self.help(update, context)
+            return
+
+        # ============ 1. ЗАМЕТКА ============
         if context.user_data.get('awaiting_note'):
             client_id = context.user_data.get('note_client_id')
             context.user_data.pop('awaiting_note', None)
@@ -281,19 +336,17 @@ class CommandsMixin:
                 await update.message.reply_text(f"❌ Ошибка: {e}", reply_markup=main_reply_markup())
             return
 
-                # FSM: описание события
+        # ============ 2. ОПИСАНИЕ СОБЫТИЯ ============
         if context.user_data.get('awaiting_event_description'):
             context.user_data.pop('awaiting_event_description', None)
             context.user_data['event_description_text'] = text
 
-            # Если время УЖЕ выбрано (через event_empty_* / event_plan_at_*) —
-            # создаём событие СРАЗУ, без повторного календаря
+            # Если время УЖЕ выбрано (через event_empty_* / event_plan_at_*)
             scheduled_date = context.user_data.get('event_scheduled_date')
             if scheduled_date:
                 client_id = context.user_data.get('planning_client_id')
                 action = context.user_data.get('planning_action_type', 'custom')
 
-                from apps.clients.models import ScheduledEvent
                 def _get_client():
                     return Client.objects.filter(id=client_id).first()
 
@@ -337,7 +390,6 @@ class CommandsMixin:
                     logger.error(f"Ошибка создания события: {e}", exc_info=True)
                     await update.message.reply_text(f"❌ Ошибка: {e}", reply_markup=main_reply_markup())
 
-                # Очищаем состояние
                 for key in ('planning_client_id', 'planning_action_type',
                             'event_scheduled_date', 'event_description_text'):
                     context.user_data.pop(key, None)
@@ -353,7 +405,7 @@ class CommandsMixin:
             )
             return
 
-        # FSM: email
+        # ============ 3. EMAIL ============
         if context.user_data.get('awaiting_email', {}).get('stage') == 'subject':
             await self._handle_email_subject(update, context)
             return
@@ -362,7 +414,7 @@ class CommandsMixin:
             await self._handle_email_body(update, context)
             return
 
-        # FSM: поиск
+        # ============ 4. ПОИСК ============
         if context.user_data.get('finding'):
             context.user_data['finding'] = False
 
@@ -399,23 +451,19 @@ class CommandsMixin:
                 )
             return
 
+        # ============ 5. FALLBACK ============
         await update.message.reply_text(
             "🤔 Не понял команду. Используйте меню ниже или /help",
             reply_markup=main_reply_markup(),
         )
 
-        # ============ EMAIL ============
+    # ============ EMAIL ============
 
     async def handle_email_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int = None):
-        """Начало отправки email клиенту (callback action_ID_message).
-
-        client_id передаётся из _handle_action (из callback action_<id>_message).
-        Если не передан — берём из context.user_data (fallback для старых карточек).
-        """
+        """Начало отправки email клиенту (callback action_ID_message)."""
         query = update.callback_query
         await query.answer()
 
-        # Если client_id не передан — fallback на user_data
         if client_id is None:
             client_id = context.user_data.get('selected_client_id')
 
