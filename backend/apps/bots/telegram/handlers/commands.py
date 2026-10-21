@@ -292,8 +292,6 @@ class CommandsMixin:
                 action = context.user_data.get('planning_action_type', 'custom')
 
                 from apps.clients.models import ScheduledEvent
-                from asgiref.sync import sync_to_async
-
                 def _get_client():
                     return Client.objects.filter(id=client_id).first()
 
