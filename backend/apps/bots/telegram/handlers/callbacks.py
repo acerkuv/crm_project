@@ -11,7 +11,6 @@ class CallbacksMixin:
     """Роутер всех callback'ов."""
 
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обёртка с try/except для отлова ошибок."""
         query = update.callback_query
         data = query.data
         logger.info(f"🔘 callback: {data}")
@@ -26,9 +25,27 @@ class CallbacksMixin:
                 pass
 
     async def _button_handler_impl(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Реализация роутера."""
         query = update.callback_query
         data = query.data
+
+        # ============ ПОДТВЕРЖДЕНИЕ ПЛАНИРОВАНИЯ (голос/текст) ============
+        if data == 'plan_confirm_yes':
+            await query.answer("✅ Создаю...")
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await self._create_plan_from_context(update, context)
+            return
+
+        if data == 'plan_confirm_no':
+            await query.answer("❌ Отменено")
+            context.user_data.pop('confirm_plan', None)
+            try:
+                await query.edit_message_text("❌ Отменено")
+            except Exception:
+                pass
+            return
 
         if data == 'noop':
             await query.answer()
@@ -136,7 +153,6 @@ class CallbacksMixin:
             return
 
         # ============ КАЛЕНДАРЬ СОБЫТИЙ ============
-
         if data.startswith('event_month_'):
             parts = data.split('_')
             await self._handle_event_month(update, context, int(parts[2]), int(parts[3]))
@@ -151,7 +167,6 @@ class CallbacksMixin:
             await self._handle_event_day(update, context, int(parts[2]), int(parts[3]), int(parts[4]))
             return
 
-        # Слот с событием (get_event_day_keyboard → event_time_D_M_Y_H_M)
         if data.startswith('event_time_') and not data.startswith('event_time_slot_'):
             parts = data.split('_')
             day = int(parts[2]); month = int(parts[3]); year = int(parts[4])
@@ -159,7 +174,6 @@ class CallbacksMixin:
             await self._handle_event_time_slot(update, context, day, month, year, hour, minute)
             return
 
-        # Пустой слот (get_event_day_keyboard → event_empty_D_M_Y_H_M)
         if data.startswith('event_empty_'):
             parts = data.split('_')
             day = int(parts[2]); month = int(parts[3]); year = int(parts[4])
@@ -167,7 +181,6 @@ class CallbacksMixin:
             await self._handle_event_time_slot(update, context, day, month, year, hour, minute)
             return
 
-        # Старый формат (если где-то остался)
         if data.startswith('event_hour_empty_'):
             parts = data.split('_')
             await self._handle_event_hour_empty(update, context, int(parts[3]), int(parts[4]), int(parts[5]), int(parts[6]))
