@@ -485,31 +485,7 @@ class ClientsMixin:
 
 async def show_client_options(update, context, client):
     """Показывает карточку клиента с кнопками (для поиска)."""
-    status_emoji = {'vip': '⭐', 'active': '✅', 'regular': '🔄', 'lead': '🆕', 'inactive': '⏸️'}.get(client.status, '📌')
-    message = f"{status_emoji} *{client.first_name} {client.last_name}*\n\n"
-    message += f"📞 {client.phone}\n"
-    if client.email:
-        message += f"✉️ {client.email}\n"
-    if client.company:
-        message += f"🏢 {client.company}\n"
-    message += f"📅 В базе: {(timezone.now() - client.created_at).days} дн."
-
-    keyboard = [
-        [
-            InlineKeyboardButton("📞 Позвонить", callback_data=f"action_{client.id}_call"),
-            InlineKeyboardButton("✉️ Написать", callback_data=f"action_{client.id}_message"),
-        ],
-        [
-            InlineKeyboardButton("🎂 Поздравить", callback_data=f"action_{client.id}_birthday"),
-            InlineKeyboardButton("📅 Встреча", callback_data=f"action_{client.id}_meeting"),
-        ],
-        [
-            InlineKeyboardButton("🔔 Напомнить", callback_data=f"action_{client.id}_reminder"),
-            InlineKeyboardButton("📝 Комментарий", callback_data=f"action_{client.id}_note"),
-        ],
-        [
-            InlineKeyboardButton("🤖 ИИ помощь", callback_data=f"action_{client.id}_ai"),
-        ],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
+    from ..utils import get_client_card
+    card = get_client_card(client, show_avatar=False) + "\n\n_Выберите действие:_"
+    keyboard = get_client_full_actions_keyboard(client.id)
+    await update.message.reply_text(card, parse_mode='Markdown', reply_markup=keyboard)

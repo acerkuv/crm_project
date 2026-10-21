@@ -82,7 +82,7 @@ def get_client_card(client, show_avatar=True, compact=False):
     
     return card
 
-def get_clients_list_message(clients, page=1, per_page=2):
+def get_clients_list_message(clients, page=1, per_page=5):
     """Формирует сообщение со списком клиентов - кнопки под каждой карточкой"""
     from .keyboards import get_client_compact_keyboard
     
