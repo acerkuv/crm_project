@@ -47,7 +47,7 @@ def main():
         with open(audio_path, 'rb') as f:
             data = f.read()
 
-        # format: oggopus (Telegram voice), lpcm, mp3, etc.
+        # format: oggopus (Telegram voice), lpcm, mp3
         text = recognize.recognize(data, format='oggopus')
         print('=' * 60)
         print(f'📝 Распознанный текст:\n{text}')
