@@ -1,5 +1,5 @@
 """
-Тестовый скрипт для проверки Yandex SpeechKit (STT) — пакет speechkit.
+Тестовый скрипт для проверки Yandex SpeechKit (STT) — пакет yandex-ai-studio-sdk.
 Запускать внутри контейнера bot:
   docker compose exec bot python test_voice.py /path/to/audio.ogg
 """
@@ -11,7 +11,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'crm.settings.production')
 django.setup()
 
 from django.conf import settings
-from speechkit import Session, ShortAudioRecognition
+from yandex_ai_studio_sdk import AIStudio
 
 
 def main():
@@ -33,24 +33,20 @@ def main():
     print(f"🔑 API key length: {len(api_key)}")
     print(f"📁 Audio file: {audio_path}")
 
-    # Аутентификация через API-ключ
-    session = Session.from_api_key(
-        api_key=api_key,
-        x_client_request_id_header=True,
-    )
+    # Инициализация SDK (folder_id не нужен при API-ключе)
+    sdk = AIStudio(auth=api_key)
 
-    # Распознавание
-    recognize = ShortAudioRecognition(session)
+    # Модель распознавания
+    model = sdk.models.speech_to_text('general')
 
     print("🎤 Распознаю...")
     try:
         with open(audio_path, 'rb') as f:
-            data = f.read()
+            audio_data = f.read()
 
-        # format: oggopus (Telegram voice), lpcm, mp3
-        text = recognize.recognize(data, format='oggopus')
+        result = model.run(audio_data, audio_format='oggopus')
         print('=' * 60)
-        print(f'📝 Распознанный текст:\n{text}')
+        print(f'📝 Распознанный текст:\n{result.text}')
     except Exception as e:
         print(f"❌ Ошибка распознавания: {type(e).__name__}: {e}")
         import traceback
