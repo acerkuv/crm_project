@@ -28,7 +28,13 @@ class CallbacksMixin:
         query = update.callback_query
         data = query.data
 
-        # ============ ПОДТВЕРЖДЕНИЕ ПЛАНИРОВАНИЯ (голос/текст) ============
+        # ============ ХОББИ ============
+        if data.startswith('set_hobby_'):
+            client_id = int(data.split('_')[2])
+            await self._handle_set_hobby(update, context, client_id)
+            return
+
+        # ============ ПОДТВЕРЖДЕНИЕ ПЛАНИРОВАНИЯ ============
         if data == 'plan_confirm_yes':
             await query.answer("✅ Создаю...")
             try:
@@ -152,7 +158,6 @@ class CallbacksMixin:
             await self._handle_show_events_calendar(update, context)
             return
 
-        # ============ КАЛЕНДАРЬ СОБЫТИЙ ============
         if data.startswith('event_month_'):
             parts = data.split('_')
             await self._handle_event_month(update, context, int(parts[2]), int(parts[3]))
