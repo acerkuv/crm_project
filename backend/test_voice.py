@@ -1,5 +1,5 @@
 """
-Тестовый скрипт для проверки Yandex SpeechKit (STT).
+Тестовый скрипт для проверки Yandex SpeechKit (STT) — пакет speechkit.
 Запускать внутри контейнера bot:
   docker compose exec bot python test_voice.py /path/to/audio.ogg
 """
@@ -11,8 +11,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'crm.settings.production')
 django.setup()
 
 from django.conf import settings
-from speechkit import model_repository, configure_credentials, creds
-from speechkit.stt import AudioProcessingType
+from speechkit import Session, ShortAudioRecognition
 
 
 def main():
@@ -35,30 +34,27 @@ def main():
     print(f"📁 Audio file: {audio_path}")
 
     # Аутентификация через API-ключ
-    configure_credentials(
-        yandex_credentials=creds.YandexCredentials(api_key=api_key)
+    session = Session.from_api_key(
+        api_key=api_key,
+        x_client_request_id_header=True,
     )
 
-    # Модель распознавания
-    model = model_repository.recognition_model()
-    model.model = 'general'
-    model.language = 'ru-RU'
-    model.audio_processing_type = AudioProcessingType.Full
+    # Распознавание
+    recognize = ShortAudioRecognition(session)
 
     print("🎤 Распознаю...")
     try:
-        result = model.transcribe_file(audio_path)
-        for c, res in enumerate(result):
-            print('=' * 60)
-            print(f'channel: {c}')
-            print(f'raw_text:\n{res.raw_text}')
-            print(f'norm_text:\n{res.normalized_text}')
-            if res.has_utterances():
-                print('utterances:')
-                for utterance in res.utterances:
-                    print(utterance)
+        with open(audio_path, 'rb') as f:
+            data = f.read()
+
+        # format: oggopus (Telegram voice), lpcm, mp3, etc.
+        text = recognize.recognize(data, format='oggopus')
+        print('=' * 60)
+        print(f'📝 Распознанный текст:\n{text}')
     except Exception as e:
         print(f"❌ Ошибка распознавания: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
