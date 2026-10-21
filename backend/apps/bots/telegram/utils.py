@@ -65,10 +65,10 @@ def get_client_card(client, show_avatar=True, compact=False):
         try:
             from django.utils import timezone as tz
             now = tz.now()
-            upcoming = client.scheduled_events.filter(
+            upcoming = list(client.scheduled_events.filter(
                 is_completed=False,
                 scheduled_date__gte=now,
-            ).order_by('scheduled_date')[:5]
+            ).order_by('scheduled_date')[:10])
 
             if upcoming:
                 card += "\n\n📅 *Запланированные события:*\n"
