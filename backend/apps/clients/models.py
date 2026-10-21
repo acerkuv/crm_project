@@ -21,6 +21,7 @@ class Client(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     last_contact = models.DateTimeField('Последний контакт', null=True, blank=True)
+    hobby = models.CharField('Хобби', max_length=500, blank=True, default='')
     status = models.CharField('Статус', max_length=20, choices=[
         ('lead', 'Лид'),
         ('active', 'Активный'),
