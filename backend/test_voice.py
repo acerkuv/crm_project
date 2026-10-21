@@ -1,5 +1,5 @@
 """
-Тестовый скрипт для проверки Yandex SpeechKit (STT) — пакет yandex-ai-studio-sdk.
+Тестовый скрипт для проверки Yandex SpeechKit (STT) через прямой HTTP.
 Запускать внутри контейнера bot:
   docker compose exec bot python test_voice.py /path/to/audio.ogg
 """
@@ -11,7 +11,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'crm.settings.production')
 django.setup()
 
 from django.conf import settings
-from yandex_ai_studio_sdk import AIStudio
+import requests
 
 
 def main():
@@ -33,20 +33,38 @@ def main():
     print(f"🔑 API key length: {len(api_key)}")
     print(f"📁 Audio file: {audio_path}")
 
-    # Инициализация SDK (folder_id не нужен при API-ключе)
-    sdk = AIStudio(auth=api_key)
-
-    # Модель распознавания
-    model = sdk.models.speech_to_text('general')
+    # Синхронное распознавание (до 1 минуты аудио)
+    url = "https://stt.api.cloud.yandex.net/speech/v1/stt:recognize"
+    headers = {
+        "Authorization": f"Api-Key {api_key}",
+    }
+    params = {
+        "lang": "ru-RU",
+        "format": "oggopus",
+        "topic": "general",
+    }
 
     print("🎤 Распознаю...")
     try:
         with open(audio_path, 'rb') as f:
             audio_data = f.read()
 
-        result = model.run(audio_data, audio_format='oggopus')
-        print('=' * 60)
-        print(f'📝 Распознанный текст:\n{result.text}')
+        response = requests.post(
+            url,
+            headers=headers,
+            params=params,
+            data=audio_data,
+            timeout=30,
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            text = result.get('result', '')
+            print('=' * 60)
+            print(f'📝 Распознанный текст:\n{text}')
+        else:
+            print(f"❌ HTTP {response.status_code}: {response.text}")
+
     except Exception as e:
         print(f"❌ Ошибка распознавания: {type(e).__name__}: {e}")
         import traceback
