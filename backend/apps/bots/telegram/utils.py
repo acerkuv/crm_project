@@ -43,13 +43,29 @@ def get_client_card(client, show_avatar=True, compact=False):
             if days_until < 0:
                 days_until = (client.birth_date.replace(year=datetime.now().year + 1) - datetime.now().date()).days
             card += f"🎂 {client.birth_date.strftime('%d.%m.%Y')} (через {days_until} дн.)\n"
+        if getattr(client, 'address', ''):
+            card += f"📍 {client.address}\n"
+        if client.hobby:
+            card += f"🎯 {client.hobby[:100]}\n"
         if client.comment:
             card += f"📝 {client.comment[:100]}...\n" if len(client.comment) > 100 else f"📝 {client.comment}\n"
         card += f"📅 В базе: {(datetime.now().date() - client.created_at.date()).days} дн."
         
+        # Кастомные поля
+        try:
+            cfs = list(client.custom_fields.all()[:10])
+            if cfs:
+                card += "\n\n➕ *Доп. поля:*\n"
+                for cf in cfs:
+                    card += f"• {cf.name}: {cf.value[:60]}\n"
+        except Exception:
+            pass
+        
         # Последние 3 заметки (Interaction type='note')
         try:
-            notes = client.interactions.filter(type='note').order_by('-created_at')[:3]
+            notes = client.interactions.filter(
+                type='note', is_deleted=False
+            ).order_by('-created_at')[:3]
             if notes:
                 card += "\n\n📝 *Последние заметки:*\n"
                 for note in notes:
