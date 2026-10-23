@@ -74,3 +74,10 @@ backups/
 # OS
 Thumbs.db
 .DS_Store
+
+# Deploy artifacts
+crm_deploy_*.tar.gz
+crm_deploy_*.tar.gz.sha256
+.deploy_tmp/
+scripts/cleanup_*.sh
+scripts/refactor_bot.sh
