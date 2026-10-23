@@ -26,7 +26,6 @@ class ClientsMixin:
     # ============ СПИСОК ============
 
     async def list_clients(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Старая карточка-список (reply-кнопка может использовать list_command)."""
         clients = await self._get_clients_list()
         if not clients:
             await update.message.reply_text("📭 Клиентов пока нет.", reply_markup=main_reply_markup())
@@ -52,11 +51,7 @@ class ClientsMixin:
         keyboard.append([InlineKeyboardButton("📋 Все клиенты", callback_data="back_to_list")])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            message,
-            parse_mode='Markdown',
-            reply_markup=reply_markup,
-        )
+        await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
 
     async def _get_clients_list(self):
         return await sync_to_async(lambda: list(Client.objects.all()[:10]))()
@@ -80,6 +75,8 @@ class ClientsMixin:
             message += f"✉️ {client.email}\n"
         if client.company:
             message += f"🏢 {client.company}\n"
+        if client.hobby:
+            message += f"🎯 {client.hobby}\n"
         if client.comment:
             message += f"📝 {client.comment[:100]}...\n"
         message += f"📅 В базе: {(timezone.now() - client.created_at).days} дн."
@@ -98,18 +95,16 @@ class ClientsMixin:
                 InlineKeyboardButton("📝 Комментарий", callback_data=f"action_{client.id}_note"),
             ],
             [
+                InlineKeyboardButton("🎯 Хобби", callback_data=f"set_hobby_{client.id}"),
                 InlineKeyboardButton("🤖 ИИ помощь", callback_data=f"action_{client.id}_ai"),
+            ],
+            [
                 InlineKeyboardButton("⬅️ Назад", callback_data="back_to_list"),
             ],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await query.edit_message_text(
-            message,
-            parse_mode='Markdown',
-            reply_markup=reply_markup,
-        )
-
+        await query.edit_message_text(message, parse_mode='Markdown', reply_markup=reply_markup)
         context.user_data['selected_client_id'] = client_id
 
     # ============ ГЛАВНОЕ МЕНЮ И СПИСКИ ============
@@ -180,7 +175,6 @@ class ClientsMixin:
         await query.edit_message_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_client_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
-        """Полная карточка клиента с аватаркой (callback client_detail_*)."""
         query = update.callback_query
         await query.answer()
 
@@ -212,16 +206,13 @@ class ClientsMixin:
                 buf.name = f'avatar_{client_id}.jpg'
 
                 await query.message.chat.send_photo(
-                    photo=buf,
-                    caption=card_text,
-                    parse_mode='Markdown',
-                    reply_markup=keyboard,
+                    photo=buf, caption=card_text,
+                    parse_mode='Markdown', reply_markup=keyboard,
                 )
                 try:
                     await query.message.delete()
                 except Exception:
                     pass
-                logger.info(f"🖼️ _handle_client_detail: фото отправлено для client_id={client_id}")
             except Exception as e:
                 logger.error(f"❌ Ошибка отправки аватарки client_id={client_id}: {e}", exc_info=True)
                 try:
@@ -256,20 +247,37 @@ class ClientsMixin:
             buf = BytesIO(photo_data)
             buf.name = f'avatar_{client_id}.jpg'
 
-            await query.message.chat.send_photo(
-                photo=buf,
-                caption=caption,
-                parse_mode='Markdown',
-            )
-            logger.info(f"🖼️ _handle_show_avatar: фото отправлено для client_id={client_id}")
+            await query.message.chat.send_photo(photo=buf, caption=caption, parse_mode='Markdown')
         except Exception as e:
             logger.error(f"❌ Ошибка отправки аватарки client_id={client_id}: {e}", exc_info=True)
             await query.message.reply_text("❌ Не удалось отправить аватарку")
 
-    # ============ СТАТИСТИКА / ДНИ РОЖДЕНИЯ / СОБЫТИЯ (inline) ============
+    # ============ ХОББИ ============
+
+    async def _handle_set_hobby(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
+        """Кнопка «🎯 Хобби» — запрос хобби текстом/голосом."""
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return Client.objects.filter(id=client_id).first()
+
+        client = await sync_to_async(_get)()
+        if not client:
+            await query.edit_message_text("❌ Клиент не найден")
+            return
+
+        context.user_data['hobby_client_id'] = client_id
+        context.user_data['awaiting_hobby'] = True
+
+        await query.edit_message_text(
+            f"🎯 *Хобби для {client.first_name} {client.last_name}*\n\n"
+            f"Текущее: {client.hobby or '—'}\n\n"
+            f"Введите или скажите хобби (например: лыжи, рыбалка, путешествия):",
+            parse_mode='Markdown',
+        )
 
     async def _handle_show_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Статистика (inline callback show_stats)."""
         from apps.clients.models import ScheduledEvent
 
         query = update.callback_query
@@ -302,7 +310,6 @@ class ClientsMixin:
         await query.edit_message_text(response, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_show_birthdays(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Дни рождения (inline callback show_birthdays)."""
         query = update.callback_query
         await query.answer()
 
@@ -338,7 +345,6 @@ class ClientsMixin:
         await query.edit_message_text(response, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_show_events_calendar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Календарь событий (inline callback show_events_calendar)."""
         from datetime import datetime
 
         query = update.callback_query
@@ -354,7 +360,6 @@ class ClientsMixin:
             await query.message.reply_text(text, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_show_events_calendar_from_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Календарь событий (reply-кнопка 📅 События)."""
         from datetime import datetime
 
         today = datetime.now()
@@ -366,20 +371,13 @@ class ClientsMixin:
     # ============ ДЕЙСТВИЯ С КЛИЕНТОМ ============
 
     async def _handle_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int, action_type: str):
-        """Роутер быстрых действий с клиентом.
-
-        Вызывается из _button_handler_impl для callback'ов action_<id>_<type>.
-        client_id — из callback, action_type — тип действия.
-        """
         query = update.callback_query
         await query.answer()
 
-        # Позвонить — сразу отправляем контакт + логируем Interaction(call)
         if action_type == 'call':
             await self._handle_call_with_log(update, context, client_id)
             return
 
-        # Заметка — FSM: запрашиваем текст, сохраняем как Interaction(note)
         if action_type == 'note':
             context.user_data['note_client_id'] = client_id
             context.user_data['awaiting_note'] = True
@@ -404,16 +402,13 @@ class ClientsMixin:
             )
             return
 
-        # Email — начало отправки письма
         if action_type == 'message':
             await self.handle_email_action(update, context, client_id)
             return
 
-        # meeting, reminder, birthday, ai — в планирование (заглушка до Шага 4)
         await self._handle_plan_start(update, context, client_id)
 
     async def _handle_call_with_log(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
-        """Позвонить + записать Interaction(type='call')."""
         from apps.clients.models import Interaction
 
         query = update.callback_query
@@ -426,18 +421,15 @@ class ClientsMixin:
             await query.message.reply_text("❌ У клиента нет телефона.")
             return
 
-        # Логируем Interaction(call)
         try:
             await sync_to_async(Interaction.objects.create)(
-                client=client,
-                type='call',
+                client=client, type='call',
                 content=f"Звонок клиенту {client.first_name} {client.last_name}",
                 created_at=timezone.now(),
             )
         except Exception as e:
             logger.error(f"Ошибка создания Interaction(call): {e}")
 
-        # Текст с номером (для копирования)
         await query.message.reply_text(
             f"📞 *Позвонить: {client.first_name} {client.last_name}*\n\n"
             f"`{client.phone}`\n\n"
@@ -452,7 +444,6 @@ class ClientsMixin:
         )
 
     async def handle_call_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Кнопка 📞 Позвонить из старой карточки (callback action_*_call)."""
         query = update.callback_query
         await query.answer()
 
@@ -477,8 +468,7 @@ class ClientsMixin:
             phone_number=client.phone,
             first_name=client.first_name,
             last_name=client.last_name or '',
-        )       
-        
+        )
 
 
 # ============ МОДУЛЬНЫЕ ФУНКЦИИ ============

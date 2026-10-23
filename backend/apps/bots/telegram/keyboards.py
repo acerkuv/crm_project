@@ -285,6 +285,13 @@ def get_client_full_actions_keyboard(client_id):
                 {"text": "🤖 ИИ помощь", "callback_data": f"action_{client_id}_ai"}
             ],
             [
+                {"text": "✏️ Редактировать", "callback_data": f"edit_client_{client_id}"},
+                {"text": "🗑 Заметки", "callback_data": f"notes_list_{client_id}"}
+            ],
+            [
+                {"text": "➕ Доп. поля", "callback_data": f"custom_fields_list_{client_id}"}
+            ],
+            [
                 {"text": "⬅️ Назад к списку", "callback_data": "back_to_list"}
             ]
         ]
@@ -453,7 +460,6 @@ def get_event_list_keyboard(events, day, month, year):
                 }
             ])
         
-        # Кнопка "Запланировать новое событие"
         keyboard.append([
             {"text": "➕ Запланировать", "callback_data": f"event_plan_at_{day}_{month}_{year}"}
         ])
@@ -465,7 +471,6 @@ def get_event_list_keyboard(events, day, month, year):
             {"text": "➕ Запланировать", "callback_data": f"event_plan_at_{day}_{month}_{year}"}
         ])
     
-    # Навигация
     keyboard.append([
         {"text": "⬅️ Назад к календарю", "callback_data": f"event_back_to_calendar_{month}_{year}"},
         {"text": "🏠 Главное меню", "callback_data": "main_menu"}
@@ -489,7 +494,6 @@ def get_event_time_list_keyboard(events_by_time, time_str, day, month, year):
                 }
             ])
         
-        # Кнопка "Запланировать на это время"
         hour, minute = map(int, time_str.split(':'))
         keyboard.append([
             {"text": "➕ Запланировать", "callback_data": f"event_plan_at_{day}_{month}_{year}_{hour}_{minute}"}
@@ -499,7 +503,6 @@ def get_event_time_list_keyboard(events_by_time, time_str, day, month, year):
             {"text": "📭 Нет событий", "callback_data": "noop"}
         ])
     
-    # Навигация
     keyboard.append([
         {"text": f"⬅️ Назад к {day}.{month}.{year}", "callback_data": f"event_back_to_day_{day}_{month}_{year}"},
         {"text": "📅 Календарь", "callback_data": f"event_back_to_calendar_{month}_{year}"}
@@ -508,4 +511,45 @@ def get_event_time_list_keyboard(events_by_time, time_str, day, month, year):
         {"text": "🏠 Главное меню", "callback_data": "main_menu"}
     ])
     
+    return {"inline_keyboard": keyboard}
+
+
+# ==================== РЕДАКТИРОВАНИЕ / ЗАМЕТКИ / ДОП. ПОЛЯ ====================
+
+def get_edit_fields_keyboard(client_id):
+    fields = [
+        ('first_name', '👤 Имя'), ('last_name', '👤 Фамилия'),
+        ('phone', '📞 Телефон'), ('email', '✉️ Email'),
+        ('birth_date', '📅 Дата рождения'), ('company', '🏢 Компания'),
+        ('position', '💼 Должность'), ('hobby', '🎯 Хобби'),
+        ('address', '📍 Адрес'), ('comment', '📝 Комментарий'),
+    ]
+    keyboard = [[{"text": label, "callback_data": f"edit_field_{client_id}_{f}"}]
+                for f, label in fields]
+    keyboard.append([{"text": "⬅️ Назад", "callback_data": f"client_detail_{client_id}"}])
+    return {"inline_keyboard": keyboard}
+
+
+def get_notes_list_keyboard(client_id, notes):
+    keyboard = []
+    for note in notes:
+        text = (note.content or '')[:40].replace('\n', ' ')
+        keyboard.append([
+            {"text": f"📝 {text}", "callback_data": "noop"},
+            {"text": "🗑", "callback_data": f"note_delete_{note.id}"},
+        ])
+    keyboard.append([{"text": "➕ Добавить заметку", "callback_data": f"action_{client_id}_note"}])
+    keyboard.append([{"text": "⬅️ Назад", "callback_data": f"client_detail_{client_id}"}])
+    return {"inline_keyboard": keyboard}
+
+
+def get_custom_fields_keyboard(client_id, custom_fields):
+    keyboard = []
+    for cf in custom_fields:
+        keyboard.append([
+            {"text": f"{cf.name}: {cf.value[:30]}", "callback_data": "noop"},
+            {"text": "🗑", "callback_data": f"custom_field_del_{client_id}_{cf.id}"},
+        ])
+    keyboard.append([{"text": "➕ Добавить поле", "callback_data": f"custom_field_add_{client_id}"}])
+    keyboard.append([{"text": "⬅️ Назад", "callback_data": f"client_detail_{client_id}"}])
     return {"inline_keyboard": keyboard}

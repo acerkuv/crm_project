@@ -35,6 +35,7 @@ from .handlers.clients import ClientsMixin
 from .handlers.events import EventsMixin
 from .handlers.callbacks import CallbacksMixin
 from .handlers.voice import VoiceMixin
+from .handlers.edit import EditMixin
 from .handlers.helpers import main_reply_markup
 
 from apps.bots.telegram.keyboards import (
@@ -83,7 +84,8 @@ logger = logging.getLogger(__name__)
 
 
 
-class TelegramBot(PhotosMixin, CommandsMixin, ClientsMixin, EventsMixin, CallbacksMixin, VoiceMixin):
+class TelegramBot(PhotosMixin, CommandsMixin, ClientsMixin, EventsMixin,
+                  CallbacksMixin, VoiceMixin, EditMixin):
     def __init__(self):
         self.token = settings.TELEGRAM_BOT_TOKEN
         logger.info("🤖 Бот инициализирован")

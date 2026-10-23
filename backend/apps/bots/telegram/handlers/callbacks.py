@@ -80,6 +80,34 @@ class CallbacksMixin:
             await self._handle_client_detail(update, context, client_id)
             return
 
+                # ============ РЕДАКТИРОВАНИЕ / ЗАМЕТКИ / ДОП. ПОЛЯ ============
+        if data.startswith('edit_client_'):
+            await self._handle_edit_client_menu(update, context, int(data.split('_')[2]))
+            return
+        if data.startswith('edit_field_'):
+            _, _, cid, field = data.split('_', 3)
+            await self._handle_edit_field_start(update, context, int(cid), field)
+            return
+        if data.startswith('notes_list_'):
+            await self._handle_notes_list(update, context, int(data.split('_')[2]))
+            return
+        if data.startswith('note_delete_'):
+            await self._handle_note_delete(update, context, int(data.split('_')[2]))
+            return
+        if data.startswith('custom_fields_list_'):
+            await self._handle_custom_fields_list(update, context, int(data.split('_')[3]))
+            return
+        if data.startswith('custom_field_add_'):
+            await self._handle_custom_field_add_start(update, context, int(data.split('_')[3]))
+            return
+        if data.startswith('custom_field_del_'):
+            parts = data.split('_')
+            await self._handle_custom_field_delete(update, context, int(parts[3]), int(parts[4]))
+            return
+        if data == 'add_manual_start':
+            await self._handle_add_manual_start(update, context)
+            return
+
         if data.startswith('client_'):
             client_id = int(data.split('_')[1])
             await self.show_client_actions(update, context, client_id)

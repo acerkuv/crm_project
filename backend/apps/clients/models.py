@@ -22,6 +22,7 @@ class Client(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     last_contact = models.DateTimeField('Последний контакт', null=True, blank=True)
     hobby = models.CharField('Хобби', max_length=500, blank=True, default='')
+    address = models.CharField('Адрес', max_length=500, blank=True, default='')
     status = models.CharField('Статус', max_length=20, choices=[
         ('lead', 'Лид'),
         ('active', 'Активный'),
@@ -72,6 +73,7 @@ class Interaction(models.Model):
     is_ai_generated = models.BooleanField('Сгенерировано ИИ', default=False)
     sent_via_telegram = models.BooleanField('Отправлено в Telegram', default=False)
     sent_via_max = models.BooleanField('Отправлено в MAX', default=False)
+    is_deleted = models.BooleanField('Удалено', default=False)
     
     class Meta:
         verbose_name = 'Взаимодействие'
@@ -109,3 +111,26 @@ class ScheduledEvent(models.Model):
     
     def __str__(self):
         return f"{self.get_event_type_display()} - {self.client} - {self.scheduled_date}"
+    
+class CustomField(models.Model):
+    """Произвольное поле карточки клиента."""
+    FIELD_TYPES = [
+        ('text', 'Текст'),
+        ('date', 'Дата'),
+        ('number', 'Число'),
+    ]
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='custom_fields')
+    name = models.CharField('Название поля', max_length=100)
+    field_type = models.CharField('Тип', max_length=20, choices=FIELD_TYPES, default='text')
+    value = models.TextField('Значение', blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Кастомное поле'
+        verbose_name_plural = 'Кастомные поля'
+        unique_together = [('client', 'name')]
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.client}: {self.name}={self.value[:30]}"

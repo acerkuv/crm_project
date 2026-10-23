@@ -3,7 +3,6 @@ import logging
 import re
 from datetime import datetime
 
-
 from telegram import Update
 from telegram.ext import ContextTypes
 from django.utils import timezone
@@ -57,7 +56,9 @@ class CommandsMixin:
             "В карточке клиента нажми '✉️ Написать' — бот отправит письмо\n\n"
             "🎤 *Голосовые команды:*\n"
             "«Найди Ивана», «Список клиентов», «Статистика», «События»\n"
-            "«Запланируй звонок Евгению на 25 декабря 18:00»",
+            "«Запланируй звонок Евгению на 25 декабря 18:00»\n"
+            "«Что у меня сегодня?»\n"
+            "«Хобби Евгения — лыжи, рыбалка, путешествия»",
             reply_markup=main_reply_markup(),
         )
 
@@ -159,13 +160,18 @@ class CommandsMixin:
         await update.message.reply_text(message, parse_mode='Markdown', reply_markup=main_reply_markup())
 
     async def add(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✍️ Добавить вручную", callback_data="add_manual_start")
+        ]])
         await update.message.reply_text(
             "📇 *Добавить клиента:*\n\n"
-            "1. *Отправьте контакт* — нажмите 📎 → Контакт\n\n"
-            "2. *Отправьте фото визитки* — бот распознает ФИО, телефон, email, компанию\n\n"
+            "1. *Отправьте контакт* — 📎 → Контакт\n"
+            "2. *Отправьте фото визитки* — распознаю поля\n"
+            "3. *Вручную* — заполните имя, телефон, дату рождения\n\n"
             "💡 Аватарку можно загрузить отдельно: /avatar Имя",
             parse_mode='Markdown',
-            reply_markup=main_reply_markup(),
+            reply_markup=kb,
         )
 
     async def handle_contact(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -238,12 +244,54 @@ class CommandsMixin:
                         'note_client_id', 'event_description_client_id',
                         'event_description_action', 'planning_client_id',
                         'awaiting_plan_time', 'awaiting_plan_client',
-                        'pending_plan', 'confirm_plan'):
+                        'pending_plan', 'confirm_plan',
+                        'awaiting_hobby', 'hobby_client_id','editing', 'custom_field_adding', 'add_manual',):
                 context.user_data.pop(key, None)
             await update.message.reply_text("❌ Отменено", reply_markup=main_reply_markup())
             return
 
         text_lower = text.lower()
+
+                # ============ FSM: РЕДАКТИРОВАНИЕ / ДОБ. ПОЛЯ / РУЧНОЕ ДОБАВЛЕНИЕ ============
+        if context.user_data.get('editing'):
+            if await self._apply_edit_field(update, context, text):
+                return
+        if context.user_data.get('custom_field_adding'):
+            if await self._apply_custom_field_add(update, context, text):
+                return
+        if context.user_data.get('add_manual'):
+            if await self._apply_add_manual(update, context, text):
+                return
+
+        # ============ ОЖИДАНИЕ ХОББИ (после кнопки «🎯 Хобби») ============
+        if context.user_data.get('awaiting_hobby'):
+            client_id = context.user_data.pop('hobby_client_id', None)
+            context.user_data.pop('awaiting_hobby', None)
+
+            def _get_client():
+                return Client.objects.filter(id=client_id).first()
+
+            client = await sync_to_async(_get_client)()
+            if not client:
+                await update.message.reply_text("❌ Клиент не найден", reply_markup=main_reply_markup())
+                return
+
+            client.hobby = text[:500]
+            await sync_to_async(client.save)()
+
+            await update.message.reply_text(
+                f"✅ *Хобби сохранено*\n\n"
+                f"👤 {client.first_name} {client.last_name}\n"
+                f"🎯 {text[:200]}",
+                parse_mode='Markdown',
+                reply_markup=main_reply_markup(),
+            )
+            return
+
+        # ============ ХОББИ ГОЛОСОМ/ТЕКСТОМ ============
+        if any(word in text_lower for word in ('хобби', 'увлечени', 'интересы')):
+            await self._handle_hobby_voice(update, context, text)
+            return
 
         # ============ ПЛАНИРОВАНИЕ (запланируй/напомни) ============
         if any(word in text_lower for word in ('запланируй', 'запланировать', 'напомни', 'напомнить')):
@@ -320,12 +368,11 @@ class CommandsMixin:
             return
 
         # ============ ЕСТЕСТВЕННЫЕ КОМАНДЫ ============
-        # Поиск: "найди X", "поиск X"
         for prefix in ('найди ', 'найти ', 'поиск ', 'ищи ', 'найдите '):
             if text_lower.startswith(prefix):
                 query_text = text[len(prefix):].strip()
                 if query_text:
-                    def _search(t):
+                    def _search2(t):
                         return list(
                             Client.objects.filter(
                                 Q(first_name__icontains=t) |
@@ -336,7 +383,7 @@ class CommandsMixin:
                             )
                         )
 
-                    clients = await sync_to_async(_search)(query_text)
+                    clients = await sync_to_async(_search2)(query_text)
                     if clients:
                         await show_client_options(update, context, clients[0])
                     else:
@@ -478,7 +525,7 @@ class CommandsMixin:
         if context.user_data.get('finding'):
             context.user_data['finding'] = False
 
-            def _search(t):
+            def _search3(t):
                 return list(
                     Client.objects.filter(
                         Q(first_name__icontains=t) |
@@ -489,7 +536,7 @@ class CommandsMixin:
                     )
                 )
 
-            clients = await sync_to_async(_search)(text)
+            clients = await sync_to_async(_search3)(text)
             if clients:
                 scheduled_date = context.user_data.get('event_scheduled_date')
                 if scheduled_date:
@@ -515,7 +562,187 @@ class CommandsMixin:
             reply_markup=main_reply_markup(),
         )
 
-    # ============ ПЛАНИРОВАНИЕ ГОЛОСОМ / ТЕКСТОМ (GigaChat) ============
+    # ============ ХОББИ (голос/текст) ============
+
+    async def _handle_hobby_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """«Хобби Евгения — лыжи, рыбалка» → сохраняет в client.hobby."""
+        from django.db.models import Q
+
+        try:
+            await update.message.reply_text("🤔 Анализирую...")
+            parsed = await self._parse_hobby_command(text)
+
+            client_name = parsed.get('client_name', '').strip()
+            hobby = parsed.get('hobby', '').strip()
+
+            if not client_name or not hobby:
+                await update.message.reply_text(
+                    "❌ Не удалось разобрать команду.\n"
+                    "Пример: «Хобби Евгения — лыжи, рыбалка, путешествия»",
+                    reply_markup=main_reply_markup(),
+                )
+                return
+
+            def _search():
+                return list(Client.objects.filter(
+                    Q(first_name__icontains=client_name) |
+                    Q(last_name__icontains=client_name)
+                )[:1])
+
+            clients = await sync_to_async(_search)()
+            if not clients:
+                await update.message.reply_text(
+                    f"❌ Клиент «{client_name}» не найден.",
+                    reply_markup=main_reply_markup(),
+                )
+                return
+
+            client = clients[0]
+            client.hobby = hobby
+            await sync_to_async(client.save)()
+
+            await update.message.reply_text(
+                f"✅ *Хобби сохранено*\n\n"
+                f"👤 {client.first_name} {client.last_name}\n"
+                f"🎯 {hobby}",
+                parse_mode='Markdown',
+                reply_markup=main_reply_markup(),
+            )
+        except Exception as e:
+            logger.error(f"Ошибка хобби: {e}", exc_info=True)
+            await update.message.reply_text(f"❌ Ошибка: {e}", reply_markup=main_reply_markup())
+
+    async def _parse_hobby_command(self, text: str) -> dict:
+        """Парсит «Хобби X — Y» через GigaChat."""
+        import httpx
+        import json as json_lib
+        import uuid
+
+        async with httpx.AsyncClient(verify=False) as http:
+            resp = await http.post(
+                "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json",
+                    "RqUID": str(uuid.uuid4()),
+                    "Authorization": f"Basic {settings.GIGACHAT_AUTH_KEY}",
+                },
+                data="scope=GIGACHAT_API_PERS",
+            )
+            access_token = resp.json()["access_token"]
+
+        prompt = f"""Извлеки из текста данные о хобби клиента.
+Текст: "{text}"
+
+Верни ТОЛЬКО JSON без пояснений:
+{{
+  "client_name": "имя клиента",
+  "hobby": "хобби через запятую"
+}}"""
+
+        async with httpx.AsyncClient(verify=False, timeout=60) as http:
+            chat = await http.post(
+                "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "GigaChat",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                },
+            )
+            content = chat.json()["choices"][0]["message"]["content"]
+
+        content = content.strip()
+        if content.startswith("```"):
+            content = content.strip("`")
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.strip()
+
+        return json_lib.loads(content)
+
+    # ============ «ЧТО У МЕНЯ СЕГОДНЯ?» ============
+
+    async def _handle_today_events(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """«Что у меня сегодня?» — события на день (текстом + голосом)."""
+        from datetime import date, timedelta
+        from ..time_utils import to_user_time
+
+        target_date = date.today()
+        text_lower = text.lower()
+
+        if 'завтра' in text_lower:
+            target_date = date.today() + timedelta(days=1)
+        elif 'послезавтра' in text_lower:
+            target_date = date.today() + timedelta(days=2)
+        else:
+            months_ru = {
+                'января': 1, 'янв': 1, 'февраля': 2, 'фев': 2,
+                'марта': 3, 'мар': 3, 'апреля': 4, 'апр': 4,
+                'мая': 5, 'май': 5, 'июня': 6, 'июн': 6,
+                'июля': 7, 'июл': 7, 'августа': 8, 'авг': 8,
+                'сентября': 9, 'сен': 9, 'октября': 10, 'окт': 10,
+                'ноября': 11, 'ноя': 11, 'декабря': 12, 'дек': 12,
+            }
+            for month_name, month_num in months_ru.items():
+                m = re.search(r'(\d{1,2})\s+' + month_name, text_lower)
+                if m:
+                    day = int(m.group(1))
+                    year = date.today().year
+                    if month_num < date.today().month:
+                        year += 1
+                    try:
+                        target_date = date(year, month_num, day)
+                    except ValueError:
+                        pass
+                    break
+
+        def _get_events():
+            events = list(ScheduledEvent.objects.filter(is_completed=False).order_by('scheduled_date'))
+            result = []
+            for e in events:
+                user_dt = to_user_time(e.scheduled_date)
+                if user_dt.date() == target_date:
+                    result.append(e)
+            return result
+
+        events = await sync_to_async(_get_events)()
+        date_str = target_date.strftime('%d.%m.%Y')
+
+        if not events:
+            await update.message.reply_text(f"📅 На {date_str} событий нет.", reply_markup=main_reply_markup())
+            return
+
+        text_reply = f"📅 *События на {date_str}:*\n\n"
+        for e in events:
+            ut = to_user_time(e.scheduled_date)
+            time_str = ut.strftime('%H:%M')
+            text_reply += f"🔴 {time_str} — {e.title}\n"
+            text_reply += f"   👤 {e.client.first_name} {e.client.last_name}\n"
+        await update.message.reply_text(text_reply, parse_mode='Markdown', reply_markup=main_reply_markup())
+
+        try:
+            voice_text = f"На {date_str} {len(events)} событий. "
+            for e in events[:5]:
+                ut = to_user_time(e.scheduled_date)
+                time_str = ut.strftime('%H часов %M минут') if ut.minute else ut.strftime('%H часов')
+                voice_text += f"В {time_str} {e.title}. "
+            if len(events) > 5:
+                voice_text += f"И ещё {len(events) - 5} событий."
+
+            audio = await self._speechkit_tts(voice_text)
+            if audio:
+                from io import BytesIO
+                buf = BytesIO(audio)
+                buf.name = 'today_events.ogg'
+                await update.message.reply_voice(voice=buf)
+        except Exception as e:
+            logger.error(f"Ошибка TTS: {e}", exc_info=True)
+
+    # ============ ПЛАНИРОВАНИЕ (GigaChat) ============
 
     async def _parse_plan_command(self, text: str) -> dict:
         """Парсит текст через GigaChat → {action, date, time, client_name, description}."""
@@ -549,12 +776,7 @@ class CommandsMixin:
   "time": "HH:MM",
   "client_name": "имя клиента или пустая строка",
   "description": "краткое описание события"
-}}
-
-Правила:
-- Если дата относительная ("завтра", "в пятницу") — вычисли от сегодня.
-- Если время не указано — верни пустую строку.
-- action: "звонок" → call, "встреча" → meeting, "напомни" → reminder, "поздравить" → birthday, иначе custom."""
+}}"""
 
         async with httpx.AsyncClient(verify=False, timeout=60) as http:
             chat = await http.post(
@@ -586,7 +808,6 @@ class CommandsMixin:
 
         try:
             await update.message.reply_text("🤔 Анализирую команду...")
-
             parsed = await self._parse_plan_command(text)
 
             action = parsed.get('action', 'custom')
@@ -727,8 +948,6 @@ class CommandsMixin:
             reply_markup=main_reply_markup(),
         )
 
-    
-
     # ============ EMAIL ============
 
     async def handle_email_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int = None):
@@ -768,83 +987,6 @@ class CommandsMixin:
             f"📝 Тема: {email_data['subject']}\n\nТеперь введите *текст* письма:",
             parse_mode='Markdown',
         )
-
-
-    async def _handle_today_events(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-        """«Что у меня сегодня?» — события на день (текстом + голосом)."""
-        from datetime import date, timedelta
-        from ..time_utils import to_user_time
-
-        target_date = date.today()
-        text_lower = text.lower()
-
-        if 'завтра' in text_lower:
-            target_date = date.today() + timedelta(days=1)
-        elif 'послезавтра' in text_lower:
-            target_date = date.today() + timedelta(days=2)
-        else:
-            months_ru = {
-                'января': 1, 'янв': 1, 'февраля': 2, 'фев': 2,
-                'марта': 3, 'мар': 3, 'апреля': 4, 'апр': 4,
-                'мая': 5, 'май': 5, 'июня': 6, 'июн': 6,
-                'июля': 7, 'июл': 7, 'августа': 8, 'авг': 8,
-                'сентября': 9, 'сен': 9, 'октября': 10, 'окт': 10,
-                'ноября': 11, 'ноя': 11, 'декабря': 12, 'дек': 12,
-            }
-            for month_name, month_num in months_ru.items():
-                m = re.search(r'(\d{1,2})\s+' + month_name, text_lower)
-                if m:
-                    day = int(m.group(1))
-                    year = date.today().year
-                    if month_num < date.today().month:
-                        year += 1
-                    try:
-                        target_date = date(year, month_num, day)
-                    except ValueError:
-                        pass
-                    break
-
-        def _get_events():
-            events = list(ScheduledEvent.objects.filter(is_completed=False).order_by('scheduled_date'))
-            result = []
-            for e in events:
-                user_dt = to_user_time(e.scheduled_date)
-                if user_dt.date() == target_date:
-                    result.append(e)
-            return result
-
-        events = await sync_to_async(_get_events)()
-        date_str = target_date.strftime('%d.%m.%Y')
-
-        if not events:
-            await update.message.reply_text(f"📅 На {date_str} событий нет.", reply_markup=main_reply_markup())
-            return
-
-        text_reply = f"📅 *События на {date_str}:*\n\n"
-        for e in events:
-            ut = to_user_time(e.scheduled_date)
-            time_str = ut.strftime('%H:%M')
-            text_reply += f"🔴 {time_str} — {e.title}\n"
-            text_reply += f"   👤 {e.client.first_name} {e.client.last_name}\n"
-        await update.message.reply_text(text_reply, parse_mode='Markdown', reply_markup=main_reply_markup())
-
-        try:
-            voice_text = f"На {date_str} {len(events)} событий. "
-            for e in events[:5]:
-                ut = to_user_time(e.scheduled_date)
-                time_str = ut.strftime('%H часов %M минут') if ut.minute else ut.strftime('%H часов')
-                voice_text += f"В {time_str} {e.title}. "
-            if len(events) > 5:
-                voice_text += f"И ещё {len(events) - 5} событий."
-
-            audio = await self._speechkit_tts(voice_text)
-            if audio:
-                from io import BytesIO
-                buf = BytesIO(audio)
-                buf.name = 'today_events.ogg'
-                await update.message.reply_voice(voice=buf)
-        except Exception as e:
-            logger.error(f"Ошибка TTS: {e}", exc_info=True)
 
     async def _handle_email_body(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         from django.conf import settings
