@@ -3,7 +3,7 @@
 # Запускать локально из корня проекта crm_project/
 #
 # ВАЖНО (один раз на сервере):
-#   ssh acerkuv@192.168.0.102
+#   ssh acerkuv@192.168.0.103
 #   sudo mkdir -p /opt/temp/crm_project/{releases,backups,shared}
 #   sudo chown -R acerkuv:acerkuv /opt/temp/crm_project
 #   exit
@@ -13,7 +13,7 @@ set -euo pipefail
 # ============ НАСТРОЙКИ ============
 PROJECT_NAME="crm_project"
 SERVER_USER="acerkuv"
-SERVER_HOST="192.168.0.102"
+SERVER_HOST="192.168.0.103"
 SERVER_DIR="/opt/temp/${PROJECT_NAME}"
 
 ARCHIVE_NAME="crm_deploy_$(date +%Y%m%d_%H%M%S).tar.gz"

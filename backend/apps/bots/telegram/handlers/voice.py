@@ -84,3 +84,35 @@ class VoiceMixin:
         else:
             logger.error(f"SpeechKit STT {response.status_code}: {response.text}")
             return ''
+
+    async def _speechkit_tts(self, text: str) -> bytes:
+        """Синтез речи через SpeechKit (прямой HTTP).
+        Возвращает байты аудио (Ogg Opus) или b'' при ошибке.
+        """
+        api_key = getattr(settings, 'YANDEX_SPEECHKIT_API_KEY', '')
+        if not api_key:
+            logger.error("YANDEX_SPEECHKIT_API_KEY не задан")
+            return b''
+
+        url = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
+        headers = {"Authorization": f"Api-Key {api_key}"}
+        data = {
+            "text": text[:4000],  # лимит SpeechKit
+            "lang": "ru-RU",
+            "voice": "ermil",      # или "filipp", "alena", "jane"
+            "format": "oggopus",
+            "speed": "1.0",
+        }
+
+        response = requests.post(
+            url,
+            headers=headers,
+            data=data,
+            timeout=30,
+        )
+
+        if response.status_code == 200:
+            return response.content
+        else:
+            logger.error(f"SpeechKit TTS {response.status_code}: {response.text}")
+            return b''

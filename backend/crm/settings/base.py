@@ -7,8 +7,12 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-key-change-in-product
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
 # ALLOWED_HOSTS
-_allowed = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1')
-ALLOWED_HOSTS = [x.strip() for x in _allowed.split(',') if x.strip()]
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+# Добавляем ngrok хосты
+ALLOWED_HOSTS.extend([
+    'a7a9-194-58-37-17.ngrok-free.app',
+    '553e-194-58-37-17.ngrok-free.app',
+])
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -96,22 +100,14 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
-STATICFILES_DIRS = []
+STATICFILES_DIRS = [os.path.join(BASE_DIR, 'staticfiles')]
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# ============ Redis / Celery ============
-REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
-REDIS_PORT = os.environ.get('REDIS_PORT', '6379')
-REDIS_DB = os.environ.get('REDIS_DB', '0')
-REDIS_PASSWORD = os.environ.get('REDIS_PASSWORD', '')
-
-_auth = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
-REDIS_URL = f"redis://{_auth}{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
-
+REDIS_URL = f"redis://{os.environ.get('REDIS_HOST', 'localhost')}:{os.environ.get('REDIS_PORT', 6379)}/{os.environ.get('REDIS_DB', 0)}"
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', REDIS_URL)
 CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', REDIS_URL)
 CELERY_ACCEPT_CONTENT = ['application/json']
@@ -120,7 +116,6 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
-# ============ DRF ============
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
@@ -136,15 +131,15 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 20,
 }
 
-# ============ CORS ============
-_cors = os.environ.get(
-    'CORS_ALLOWED_ORIGINS',
-    'http://localhost:3001,http://127.0.0.1:3001',
-)
-CORS_ALLOWED_ORIGINS = [x.strip() for x in _cors.split(',') if x.strip()]
+# CORS настройки
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:8000',
+    'http://localhost:3001',
+    'https://a7a9-194-58-37-17.ngrok-free.app',
+    'https://553e-194-58-37-17.ngrok-free.app',
+]
 CORS_ALLOW_CREDENTIALS = True
 
-# ============ Logging ============
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -163,6 +158,11 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
         },
+        'file': {
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'crm.log'),
+            'formatter': 'verbose',
+        },
     },
     'root': {
         'handlers': ['console'],
@@ -170,7 +170,6 @@ LOGGING = {
     },
 }
 
-# ============ Telegram Bot ============
+# Telegram Bot
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_WEBHOOK_URL = os.environ.get('TELEGRAM_WEBHOOK_URL', '')
-GIGACHAT_AUTH_KEY = os.environ.get('GIGACHAT_AUTH_KEY', '')

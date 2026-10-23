@@ -1,54 +1,76 @@
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.venv/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
 venv/
-*.egg-info/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
 .pytest_cache/
+.coverage
+htmlcov/
+.tox/
 .mypy_cache/
+.dmypy.json
+dmypy.json
+*.log
 
 # Django
-*.sqlite3
+*.log
+*.pot
+*.pyc
+local_settings.py
+db.sqlite3
 media/
 staticfiles/
 static/
+*.sqlite3
 
-# Env
+# Environment variables
 .env
-.env.*
-!.env.example
-
-# Logs
-backend/logs/*.log
-*.log
-
-# Node
-node_modules/
-frontend/dist/
-frontend/.vite/
+.env.local
+.env.*.local
+.env.dev
+.env.prod
 
 # IDE
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
 .DS_Store
+*.iml
+.project
+.classpath
+.settings/
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env.local
+frontend/.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.cache
+
+# Docker
+docker/*.tar
+*.tar
+*.tar.gz
+*.tgz
 
 # Backups
-*.bak
-*.broken
-*.old
-
-# Deploy artifacts
-crm_deploy_*.tar.gz
-crm_deploy_*.tar.gz.sha256
-.deploy_tmp/
-prod_snapshot_*.tar.gz
-
-# Local backups
 backups/
+*.bak
+*.backup
 
-# Local refactor scripts
-scripts/cleanup_bot.sh
-scripts/refactor_bot.sh
+# OS
+Thumbs.db
+.DS_Store

@@ -68,58 +68,10 @@ services:
     image: crm_frontend_prod:latest
     container_name: crm_frontend_prod
     restart: always
-    volumes:
-      - static_volume_prod:/app/static:ro
-      - media_volume_prod:/app/media:ro
     ports:
       - "3001:80"
     depends_on:
       - backend
-    networks:
-      - crm_network_prod
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: crm_cloudflared
-    restart: always
-    command: tunnel --no-autoupdate --protocol http2 --edge-ip-version 4 --ha-connections 4 run
-    environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
-    networks:
-      - crm_network_prod
-    depends_on:
-      - frontend
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  bot:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile.prod
-    image: crm_bot_prod:latest
-    container_name: crm_bot_prod
-    restart: always
-    command: python manage.py run_bot
-    env_file:
-      - ../.env.prod
-    environment:
-      - DJANGO_SETTINGS_MODULE=crm.settings.production
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - media_volume_prod:/app/media 
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     networks:
       - crm_network_prod
     logging:
