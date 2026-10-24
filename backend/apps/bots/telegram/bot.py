@@ -101,7 +101,9 @@ class TelegramBot(PhotosMixin, CommandsMixin, ClientsMixin, EventsMixin,
         builder = Application.builder().token(self.token)
         if proxy_url:
             logger.info(f"🔗 Использую прокси: {proxy_url}")
-            builder = builder.proxy(proxy_url).get_updates_proxy(proxy_url)
+            from telegram.request import HTTPXRequest
+            request = HTTPXRequest(proxy_url=proxy_url)
+            builder = builder.request(request).get_updates_request(request)
 
         app = builder.build()
 
