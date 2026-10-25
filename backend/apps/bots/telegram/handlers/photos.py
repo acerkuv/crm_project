@@ -70,6 +70,8 @@ class PhotosMixin:
                 text += f"🏢 {data['company']}\n"
             if data.get('position'):
                 text += f"💼 {data['position']}\n"
+            if data.get('birth_date'):
+                text += f"🎂 {data['birth_date']}\n"
             text += "\nСохранить в CRM?"
 
             await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
@@ -136,29 +138,29 @@ class PhotosMixin:
             chat.raise_for_status()
             content = chat.json()["choices"][0]["message"]["content"]
 
+        content = content.strip()
+        if content.startswith("```"):
+            content = content.strip("`")
+            if content.startswith("json"):
+                content = content[4:]
             content = content.strip()
-            if content.startswith("```"):
-                content = content.strip("`")
-                if content.startswith("json"):
-                    content = content[4:]
-                content = content.strip()
-            data = json.loads(content)
+        data = json.loads(content)
 
-            # Нормализация полей
-            from apps.clients.utils import normalize_phone, parse_birth_date
-            if data.get('phone'):
-                try:
-                    data['phone'] = normalize_phone(data['phone'])
-                except Exception:
-                    pass
-            if data.get('birth_date'):
-                try:
-                    bd = parse_birth_date(data['birth_date'])
-                    data['birth_date'] = bd.isoformat() if bd else None
-                except Exception:
-                    data.pop('birth_date', None)
+        # Нормализация полей
+        from apps.clients.utils import normalize_phone, parse_birth_date
+        if data.get('phone'):
+            try:
+                data['phone'] = normalize_phone(data['phone'])
+            except Exception:
+                pass
+        if data.get('birth_date'):
+            try:
+                bd = parse_birth_date(data['birth_date'])
+                data['birth_date'] = bd.isoformat() if bd else None
+            except Exception:
+                data.pop('birth_date', None)
 
-            return data
+        return data
 
     async def handle_save_contact(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Сохранение распознанного контакта."""
@@ -196,6 +198,8 @@ class PhotosMixin:
                 f"👤 {existing.first_name} {existing.last_name}\n"
                 f"📞 {existing.phone}"
             )
+            # Открываем карточку
+            await self._open_client_card(update, context, existing)
         else:
             birth_date = data.get('birth_date')
             if isinstance(birth_date, str) and birth_date:
@@ -226,7 +230,9 @@ class PhotosMixin:
                 f"🎂 {client.birth_date.strftime('%d.%m.%Y') if client.birth_date else '—'}",
                 parse_mode='Markdown',
             )
-            
+            # Открываем карточку
+            await self._open_client_card(update, context, client)
+
         context.user_data.pop('pending_contact', None)
 
     async def handle_cancel_contact(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

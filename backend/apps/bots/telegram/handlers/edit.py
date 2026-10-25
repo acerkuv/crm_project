@@ -204,7 +204,6 @@ class EditMixin:
                     reply_markup=main_reply_markup(),
                 )
                 return True
-            
         from apps.clients.models import Client as _C
         from apps.clients.utils import normalize_phone
         data = {
@@ -225,6 +224,8 @@ class EditMixin:
                 f"🎂 {birth.strftime('%d.%m.%Y') if birth else '—'}",
                 parse_mode='Markdown', reply_markup=main_reply_markup(),
             )
+            # Сразу открываем карточку с действиями
+            await self._open_client_card(update, context, client)
         except Exception as e:
             await update.message.reply_text(f"❌ {e}", reply_markup=main_reply_markup())
         return True

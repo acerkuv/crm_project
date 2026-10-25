@@ -273,20 +273,28 @@ class CommandsMixin:
                     'first_name': contact.first_name,
                     'last_name': contact.last_name or '',
                     'telegram_id': str(update.effective_user.id),
-                    'status': 'lead',
+                    'status': 'active',  # автоактивация
                 },
             )
 
         client, created = await sync_to_async(_get_or_create)()
 
         if created:
+            # На случай, если клиент был создан со status='lead' ранее —
+            # поднимаем до 'active'
+            if client.status == 'lead':
+                client.status = 'active'
+                await sync_to_async(client.save)(update_fields=['status'])
+
             await update.message.reply_text(
-                f"✅ Клиент добавлен!\n\n"
+                f"✅ Клиент добавлен и *активен*:\n"
                 f"👤 {client.first_name} {client.last_name}\n"
-                f"📞 {client.phone}\n\n"
-                f"💡 Чтобы загрузить аватарку — используйте /avatar {client.first_name}",
+                f"📞 {client.phone}",
+                parse_mode='Markdown',
                 reply_markup=main_reply_markup(),
             )
+            # Сразу открываем карточку с действиями
+            await self._open_client_card(update, context, client)
         else:
             await update.message.reply_text(
                 f"ℹ️ Клиент уже существует:\n\n"
@@ -294,6 +302,8 @@ class CommandsMixin:
                 f"📞 {client.phone}",
                 reply_markup=main_reply_markup(),
             )
+            # Открываем карточку существующего — чтобы сразу работать
+            await self._open_client_card(update, context, client)
 
     # ============ ОБРАБОТКА ТЕКСТА ============
 
@@ -460,7 +470,8 @@ class CommandsMixin:
                 )
                 context.user_data['awaiting_plan_client'] = True
             return
-                # Ожидание темы звонка (Вариант А — после «запланируй» без сути)
+
+        # Ожидание темы звонка (Вариант А — после «запланируй» без сути)
         if context.user_data.get('awaiting_plan_description'):
             context.user_data.pop('awaiting_plan_description', None)
             pending = context.user_data.pop('pending_plan', {})
@@ -491,7 +502,7 @@ class CommandsMixin:
                 description,
             )
             return
-        
+
         # ============ ПОИСК ПО ТЕЛЕФОНУ (голос/текст) ============
         if _is_phone_search_intent(text_lower):
             await self._handle_phone_search(update, context, text)
@@ -1211,4 +1222,4 @@ class CommandsMixin:
             logger.error(f"Ошибка отправки email: {e}")
             await update.message.reply_text(f"❌ Ошибка отправки: {e}", reply_markup=main_reply_markup())
 
-        context.user_data.pop('awaiting_email', None)   
+        context.user_data.pop('awaiting_email', None)

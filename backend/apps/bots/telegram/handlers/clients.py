@@ -470,7 +470,50 @@ class ClientsMixin:
             last_name=client.last_name or '',
         )
 
+    
+    async def _open_client_card(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client):
+        """Показывает карточку клиента с полным набором действий.
 
+        Работает и из текстового сообщения (update.message), и из callback.
+        """
+        from io import BytesIO
+        from ..utils import get_client_card
+        from ..keyboards import get_client_full_actions_keyboard
+
+        card_text = get_client_card(client, show_avatar=False) + "\n\n_Выберите действие:_"
+        keyboard = get_client_full_actions_keyboard(client.id)
+        context.user_data['selected_client_id'] = client.id
+
+        # Куда отправлять — message или callback
+        target_message = update.effective_message
+        if target_message is None:
+            return
+
+        # Если есть аватарка — отправим с фото
+        has_avatar = bool(client.avatar and client.avatar.name)
+        if has_avatar:
+            try:
+                def _read_avatar():
+                    client.avatar.open('rb')
+                    try:
+                        return client.avatar.read()
+                    finally:
+                        client.avatar.close()
+
+                photo_data = await sync_to_async(_read_avatar)()
+                buf = BytesIO(photo_data)
+                buf.name = f'avatar_{client.id}.jpg'
+                await target_message.chat.send_photo(
+                    photo=buf, caption=card_text,
+                    parse_mode='Markdown', reply_markup=keyboard,
+                )
+                return
+            except Exception as e:
+                logger.error(f"❌ Ошибка отправки аватарки client_id={client.id}: {e}")
+
+        await target_message.reply_text(
+            card_text, parse_mode='Markdown', reply_markup=keyboard,
+        )
 # ============ МОДУЛЬНЫЕ ФУНКЦИИ ============
 
 async def show_client_options(update, context, client):
@@ -479,3 +522,4 @@ async def show_client_options(update, context, client):
     card = get_client_card(client, show_avatar=False) + "\n\n_Выберите действие:_"
     keyboard = get_client_full_actions_keyboard(client.id)
     await update.message.reply_text(card, parse_mode='Markdown', reply_markup=keyboard)
+
