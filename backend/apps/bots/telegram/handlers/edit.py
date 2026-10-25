@@ -43,11 +43,19 @@ class EditMixin:
             await q.edit_message_text("❌ Поле недоступно")
             return
         current = getattr(client, field, '') or '—'
+        if field == 'birth_date' and current != '—':
+            current = current.strftime('%d.%m.%Y')
         context.user_data['editing'] = {'client_id': client_id, 'field': field}
+        hints = {
+            'birth_date': 'Формат: ДД.ММ.ГГГГ (например, 25.12.1990)',
+            'phone': 'Формат: +7XXXXXXXXXX, или 8XXXXXXXXXX, или 9991234567',
+        }
+        hint = hints.get(field, '')
         await q.edit_message_text(
             f"✏️ *{FIELD_LABELS_RU.get(field, field)}*\n\n"
             f"Текущее: {current}\n\n"
-            f"Отправьте новое значение (или «—», чтобы очистить):",
+            + (f"_{hint}_\n\n" if hint else "")
+            + f"Отправьте новое значение (или «—», чтобы очистить):",
             parse_mode='Markdown',
         )
 
@@ -196,10 +204,12 @@ class EditMixin:
                     reply_markup=main_reply_markup(),
                 )
                 return True
+            
         from apps.clients.models import Client as _C
+        from apps.clients.utils import normalize_phone
         data = {
             'first_name': state['first_name'],
-            'phone': state['phone'] or None,
+            'phone': normalize_phone(state['phone']) if state['phone'] else None,
             'birth_date': birth,
             'status': 'active',
         }

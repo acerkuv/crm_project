@@ -121,7 +121,8 @@ class PhotosMixin:
                         "content": (
                             "Распознай данные с визитки. Верни ТОЛЬКО JSON без пояснений:\n"
                             '{"first_name": "", "last_name": "", "phone": "", '
-                            '"email": "", "company": "", "position": ""}'
+                            '"email": "", "company": "", "position": "", '
+                            '"birth_date": "YYYY-MM-DD или пустая строка"}'
                         ),
                         "attachments": [file_id],
                     }
@@ -135,13 +136,29 @@ class PhotosMixin:
             chat.raise_for_status()
             content = chat.json()["choices"][0]["message"]["content"]
 
-        content = content.strip()
-        if content.startswith("```"):
-            content = content.strip("`")
-            if content.startswith("json"):
-                content = content[4:]
             content = content.strip()
-        return json.loads(content)
+            if content.startswith("```"):
+                content = content.strip("`")
+                if content.startswith("json"):
+                    content = content[4:]
+                content = content.strip()
+            data = json.loads(content)
+
+            # Нормализация полей
+            from apps.clients.utils import normalize_phone, parse_birth_date
+            if data.get('phone'):
+                try:
+                    data['phone'] = normalize_phone(data['phone'])
+                except Exception:
+                    pass
+            if data.get('birth_date'):
+                try:
+                    bd = parse_birth_date(data['birth_date'])
+                    data['birth_date'] = bd.isoformat() if bd else None
+                except Exception:
+                    data.pop('birth_date', None)
+
+            return data
 
     async def handle_save_contact(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Сохранение распознанного контакта."""
@@ -180,6 +197,16 @@ class PhotosMixin:
                 f"📞 {existing.phone}"
             )
         else:
+            birth_date = data.get('birth_date')
+            if isinstance(birth_date, str) and birth_date:
+                try:
+                    from apps.clients.utils import parse_birth_date
+                    birth_date = parse_birth_date(birth_date)
+                except Exception:
+                    birth_date = None
+            elif not birth_date:
+                birth_date = None
+
             client = await sync_to_async(Client.objects.create)(
                 first_name=data.get('first_name', '') or 'Без имени',
                 last_name=data.get('last_name', ''),
@@ -187,15 +214,19 @@ class PhotosMixin:
                 email=email,
                 company=data.get('company', ''),
                 position=data.get('position', ''),
+                birth_date=birth_date,
                 telegram_id=str(update.effective_user.id),
-                status='lead',
+                status='active',  # автоактивация после скана
             )
             await query.edit_message_text(
-                f"✅ Клиент добавлен:\n"
+                f"✅ *Клиент добавлен и активен:*\n"
                 f"👤 {client.first_name} {client.last_name}\n"
                 f"📞 {client.phone}\n"
-                f"✉️ {client.email or '—'}"
+                f"✉️ {client.email or '—'}\n"
+                f"🎂 {client.birth_date.strftime('%d.%m.%Y') if client.birth_date else '—'}",
+                parse_mode='Markdown',
             )
+            
         context.user_data.pop('pending_contact', None)
 
     async def handle_cancel_contact(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

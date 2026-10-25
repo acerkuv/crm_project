@@ -1,13 +1,13 @@
-"""Сервисы для работы с карточкой клиента (используются ботом и API)."""
+"""Сервисы для работы с карточкой клиента."""
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any
 
 from django.db import transaction
 
 from .models import Client, CustomField, Interaction
+from .utils import normalize_phone, parse_birth_date
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +28,10 @@ FIELD_LABELS_RU = {
 @transaction.atomic
 def create_client_full(data: dict[str, Any]) -> Client:
     custom = data.pop('custom_fields', []) or []
-    birth = data.get('birth_date')
-    if isinstance(birth, str) and birth:
-        try:
-            data['birth_date'] = datetime.strptime(birth, '%Y-%m-%d').date()
-        except ValueError:
-            data['birth_date'] = None
+    if data.get('phone'):
+        data['phone'] = normalize_phone(data['phone'])
+    if isinstance(data.get('birth_date'), str):
+        data['birth_date'] = parse_birth_date(data['birth_date'])
     if not data.get('phone'):
         from django.utils import timezone
         data['phone'] = f"unknown_{int(timezone.now().timestamp())}"
@@ -52,15 +50,26 @@ def create_client_full(data: dict[str, Any]) -> Client:
 def update_client_field(client: Client, field: str, value: Any) -> Client:
     if field not in EDITABLE_CLIENT_FIELDS:
         raise ValueError(f"Поле '{field}' не редактируется")
-    if field == 'birth_date':
-        if value in (None, '', '—'):
+
+    if field == 'phone':
+        if value:
+            value = normalize_phone(value)
+            if Client.objects.exclude(pk=client.pk).filter(phone=value).exists():
+                raise ValueError(f"Телефон {value} уже используется другим клиентом")
+        else:
+            value = ''
+    elif field == 'birth_date':
+        if isinstance(value, str):
+            value = parse_birth_date(value)
+        elif value in (None, '', '—'):
             value = None
-        elif isinstance(value, str):
-            value = datetime.strptime(value, '%Y-%m-%d').date()
-    if field == 'status':
+    elif field == 'status':
         valid = dict(Client._meta.get_field('status').choices)
         if value not in valid:
             raise ValueError(f"Неизвестный статус: {value}")
+    else:
+        value = (value or '').strip()
+
     setattr(client, field, value or (None if field == 'birth_date' else ''))
     client.save(update_fields=[field, 'updated_at'])
     return client

@@ -10,12 +10,32 @@ from django.conf import settings
 from asgiref.sync import sync_to_async
 
 from apps.clients.models import Client, ScheduledEvent
+from apps.clients.utils import normalize_phone
 from ..keyboards import get_months_keyboard, get_plan_action_keyboard
 from ..utils import get_clients_list_message
 from .helpers import main_reply_markup
 from .clients import show_client_options
 
 logger = logging.getLogger(__name__)
+
+
+def _is_phone_like(text: str) -> bool:
+    """Похоже ли на телефон (только цифры, +, -, пробелы, скобки), минимум 7 символов."""
+    return bool(re.match(r'^[\d+\-\s()]{7,}$', text.strip()))
+
+
+def _phone_search_q(text: str):
+    """Собирает Q-объект для поиска по телефону с учётом нормализации."""
+    from django.db.models import Q
+    q = Q()
+    variants = [text]
+    if _is_phone_like(text):
+        norm = normalize_phone(text)
+        if norm and norm != text:
+            variants.append(norm)
+    for v in variants:
+        q |= Q(phone__icontains=v)
+    return q
 
 
 class CommandsMixin:
@@ -176,10 +196,11 @@ class CommandsMixin:
 
     async def handle_contact(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         contact = update.message.contact
+        phone = normalize_phone(contact.phone_number)
 
         def _get_or_create():
             return Client.objects.get_or_create(
-                phone=contact.phone_number,
+                phone=phone,
                 defaults={
                     'first_name': contact.first_name,
                     'last_name': contact.last_name or '',
@@ -245,14 +266,15 @@ class CommandsMixin:
                         'event_description_action', 'planning_client_id',
                         'awaiting_plan_time', 'awaiting_plan_client',
                         'pending_plan', 'confirm_plan',
-                        'awaiting_hobby', 'hobby_client_id','editing', 'custom_field_adding', 'add_manual',):
+                        'awaiting_hobby', 'hobby_client_id',
+                        'editing', 'custom_field_adding', 'add_manual'):
                 context.user_data.pop(key, None)
             await update.message.reply_text("❌ Отменено", reply_markup=main_reply_markup())
             return
 
         text_lower = text.lower()
 
-                # ============ FSM: РЕДАКТИРОВАНИЕ / ДОБ. ПОЛЯ / РУЧНОЕ ДОБАВЛЕНИЕ ============
+        # ============ FSM: РЕДАКТИРОВАНИЕ / ДОБ. ПОЛЯ / РУЧНОЕ ДОБАВЛЕНИЕ ============
         if context.user_data.get('editing'):
             if await self._apply_edit_field(update, context, text):
                 return
@@ -338,11 +360,9 @@ class CommandsMixin:
             pending = context.user_data.get('pending_plan', {})
 
             def _search(t):
-                return list(Client.objects.filter(
-                    Q(first_name__icontains=t) |
-                    Q(last_name__icontains=t) |
-                    Q(phone__icontains=t)
-                )[:1])
+                q = Q(first_name__icontains=t) | Q(last_name__icontains=t)
+                q |= _phone_search_q(t)
+                return list(Client.objects.filter(q)[:1])
 
             clients = await sync_to_async(_search)(text)
             if clients:
@@ -373,15 +393,10 @@ class CommandsMixin:
                 query_text = text[len(prefix):].strip()
                 if query_text:
                     def _search2(t):
-                        return list(
-                            Client.objects.filter(
-                                Q(first_name__icontains=t) |
-                                Q(last_name__icontains=t) |
-                                Q(phone__icontains=t) |
-                                Q(company__icontains=t) |
-                                Q(email__icontains=t)
-                            )
-                        )
+                        q = Q(first_name__icontains=t) | Q(last_name__icontains=t)
+                        q |= Q(company__icontains=t) | Q(email__icontains=t)
+                        q |= _phone_search_q(t)
+                        return list(Client.objects.filter(q))
 
                     clients = await sync_to_async(_search2)(query_text)
                     if clients:
@@ -526,15 +541,10 @@ class CommandsMixin:
             context.user_data['finding'] = False
 
             def _search3(t):
-                return list(
-                    Client.objects.filter(
-                        Q(first_name__icontains=t) |
-                        Q(last_name__icontains=t) |
-                        Q(phone__icontains=t) |
-                        Q(company__icontains=t) |
-                        Q(email__icontains=t)
-                    )
-                )
+                q = Q(first_name__icontains=t) | Q(last_name__icontains=t)
+                q |= Q(company__icontains=t) | Q(email__icontains=t)
+                q |= _phone_search_q(t)
+                return list(Client.objects.filter(q))
 
             clients = await sync_to_async(_search3)(text)
             if clients:
@@ -566,8 +576,6 @@ class CommandsMixin:
 
     async def _handle_hobby_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         """«Хобби Евгения — лыжи, рыбалка» → сохраняет в client.hobby."""
-        from django.db.models import Q
-
         try:
             await update.message.reply_text("🤔 Анализирую...")
             parsed = await self._parse_hobby_command(text)
@@ -804,8 +812,6 @@ class CommandsMixin:
 
     async def _handle_plan_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         """Обработка «запланируй звонок на 25 декабря 18:00»."""
-        from django.db.models import Q
-
         try:
             await update.message.reply_text("🤔 Анализирую команду...")
             parsed = await self._parse_plan_command(text)
@@ -989,7 +995,7 @@ class CommandsMixin:
         )
 
     async def _handle_email_body(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        from django.conf import settings
+        from django.conf import settings as dj_settings
         from django.core.mail import send_mail
         from apps.clients.models import Interaction
 
@@ -1001,7 +1007,7 @@ class CommandsMixin:
             await sync_to_async(send_mail)(
                 subject=email_data['subject'],
                 message=email_data['body'],
-                from_email=settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER,
+                from_email=dj_settings.DEFAULT_FROM_EMAIL or dj_settings.EMAIL_HOST_USER,
                 recipient_list=[client.email],
                 fail_silently=False,
             )
