@@ -95,6 +95,8 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=crm.settings.production
       - PYTHONUNBUFFERED=1
+      - HTTPS_PROXY=${TELEGRAM_PROXY_URL:-}
+      - HTTP_PROXY=${TELEGRAM_PROXY_URL:-}
     depends_on:
       db:
         condition: service_healthy

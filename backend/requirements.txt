@@ -28,3 +28,4 @@ flake8==6.1.0
 pre-commit==3.5.0
 python-telegram-bot[socks]>=21.0
 httpx[socks]>=0.27
+PySocks>=1.7.1
