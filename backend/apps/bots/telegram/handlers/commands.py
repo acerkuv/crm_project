@@ -99,7 +99,6 @@ class CommandsMixin:
             )
             return
 
-        # Инвалидируем старые неиспользованные коды
         await sync_to_async(
             lambda: LoginCode.objects.filter(
                 telegram_user=tg_user, is_used=False
@@ -122,12 +121,13 @@ class CommandsMixin:
             f"Введите его на странице `/login`.",
             parse_mode='Markdown',
             reply_markup=main_reply_markup(),
-        )    
+        )
 
     async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "📖 *Доступные команды:*\n\n"
             "/start - Приветствие\n"
+            "/login - Код для входа во фронтенд\n"
             "/help - Справка\n"
             "/add - Добавить клиента (контакт)\n"
             "/list - Список клиентов\n"
@@ -317,6 +317,14 @@ class CommandsMixin:
         contact = update.message.contact
         phone = normalize_phone(contact.phone_number)
 
+        from apps.users.models import TelegramUser
+        tg_user = await sync_to_async(
+            lambda: TelegramUser.objects.filter(
+                telegram_id=str(update.effective_user.id)
+            ).first()
+        )()
+        user = tg_user.user if tg_user else None
+
         def _get_or_create():
             return Client.objects.get_or_create(
                 phone=phone,
@@ -324,15 +332,14 @@ class CommandsMixin:
                     'first_name': contact.first_name,
                     'last_name': contact.last_name or '',
                     'telegram_id': str(update.effective_user.id),
-                    'status': 'active',  # автоактивация
+                    'status': 'active',
+                    'user': user,
                 },
             )
 
         client, created = await sync_to_async(_get_or_create)()
 
         if created:
-            # На случай, если клиент был создан со status='lead' ранее —
-            # поднимаем до 'active'
             if client.status == 'lead':
                 client.status = 'active'
                 await sync_to_async(client.save)(update_fields=['status'])
@@ -344,7 +351,6 @@ class CommandsMixin:
                 parse_mode='Markdown',
                 reply_markup=main_reply_markup(),
             )
-            # Сразу открываем карточку с действиями
             await self._open_client_card(update, context, client)
         else:
             await update.message.reply_text(
@@ -353,7 +359,6 @@ class CommandsMixin:
                 f"📞 {client.phone}",
                 reply_markup=main_reply_markup(),
             )
-            # Открываем карточку существующего — чтобы сразу работать
             await self._open_client_card(update, context, client)
 
     # ============ ОБРАБОТКА ТЕКСТА ============
@@ -445,7 +450,6 @@ class CommandsMixin:
             'что у меня', 'события на', 'что сегодня', 'что завтра',
             'план на', 'дела на', 'события сегодня', 'события завтра',
         )):
-            # Сброс FSM планирования, если «залип»
             for key in ('awaiting_plan_time', 'awaiting_plan_client',
                         'pending_plan', 'confirm_plan',
                         'planning_client_id', 'planning_action_type'):
@@ -658,6 +662,14 @@ class CommandsMixin:
                     return
 
                 try:
+                    from apps.users.models import TelegramUser
+                    tg_user = await sync_to_async(
+                        lambda: TelegramUser.objects.filter(
+                            telegram_id=str(update.effective_user.id)
+                        ).first()
+                    )()
+                    user = tg_user.user if tg_user else None
+
                     event = await sync_to_async(ScheduledEvent.objects.create)(
                         client=client,
                         title=text[:100],
@@ -665,6 +677,7 @@ class CommandsMixin:
                         event_type=action,
                         scheduled_date=scheduled_date,
                         is_completed=False,
+                        user=user,
                     )
 
                     action_names = {
@@ -1056,7 +1069,6 @@ class CommandsMixin:
 
             client = None
             if client_name:
-                # Ищем по первому слову (имя) — устойчиво к падежам
                 first_word = client_name.split()[0] if client_name.split() else ''
                 def _search():
                     q = Q(first_name__icontains=first_word)
@@ -1082,7 +1094,6 @@ class CommandsMixin:
                 return
 
             if not description:
-                # Тема не распознана — спрашиваем до подтверждения (Вариант А)
                 context.user_data['pending_plan'] = {
                     'action': action, 'date': date_str, 'time': time_str,
                     'client_id': client.id, 'description': '',
@@ -1130,7 +1141,6 @@ class CommandsMixin:
             ]
         ])
 
-        # effective_message: работает и для text, и для callback
         desc_line = f"📝 {description}\n\n" if description else ""
         await update.effective_message.reply_text(
             f"📋 *Проверьте событие:*\n\n"
@@ -1173,6 +1183,14 @@ class CommandsMixin:
         }
         title = data['description'][:100] if data['description'] else action_titles.get(data['action'], 'Событие')
 
+        from apps.users.models import TelegramUser
+        tg_user = await sync_to_async(
+            lambda: TelegramUser.objects.filter(
+                telegram_id=str(update.effective_user.id)
+            ).first()
+        )()
+        user = tg_user.user if tg_user else None
+
         event = await sync_to_async(ScheduledEvent.objects.create)(
             client=client,
             title=title,
@@ -1180,6 +1198,7 @@ class CommandsMixin:
             event_type=data['action'],
             scheduled_date=scheduled_date,
             is_completed=False,
+            user=user,
         )
 
         time_str_msk = format_user_time(scheduled_date)
