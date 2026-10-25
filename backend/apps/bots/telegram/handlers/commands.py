@@ -332,10 +332,12 @@ class CommandsMixin:
                         'note_client_id', 'event_description_client_id',
                         'event_description_action', 'planning_client_id',
                         'awaiting_plan_time', 'awaiting_plan_client',
+                        'awaiting_plan_description',
                         'pending_plan', 'confirm_plan',
                         'awaiting_hobby', 'hobby_client_id',
                         'editing', 'custom_field_adding', 'add_manual'):
                 context.user_data.pop(key, None)
+
             await update.message.reply_text("❌ Отменено", reply_markup=main_reply_markup())
             return
 
@@ -458,7 +460,38 @@ class CommandsMixin:
                 )
                 context.user_data['awaiting_plan_client'] = True
             return
+                # Ожидание темы звонка (Вариант А — после «запланируй» без сути)
+        if context.user_data.get('awaiting_plan_description'):
+            context.user_data.pop('awaiting_plan_description', None)
+            pending = context.user_data.pop('pending_plan', {})
 
+            client_id = pending.get('client_id')
+            if not client_id:
+                await update.message.reply_text(
+                    "❌ Данные потеряны", reply_markup=main_reply_markup()
+                )
+                return
+
+            def _get_client():
+                return Client.objects.filter(id=client_id).first()
+
+            client = await sync_to_async(_get_client)()
+            if not client:
+                await update.message.reply_text(
+                    "❌ Клиент не найден", reply_markup=main_reply_markup()
+                )
+                return
+
+            description = '' if text.strip() in ('—', '-', '') else text.strip()
+            await self._show_plan_confirmation(
+                update, context, client,
+                pending.get('action', 'call'),
+                pending.get('date', ''),
+                pending.get('time', ''),
+                description,
+            )
+            return
+        
         # ============ ПОИСК ПО ТЕЛЕФОНУ (голос/текст) ============
         if _is_phone_search_intent(text_lower):
             await self._handle_phone_search(update, context, text)
@@ -937,7 +970,7 @@ class CommandsMixin:
             date_str = parsed.get('date', '').strip()
             time_str = parsed.get('time', '').strip()
             client_name = parsed.get('client_name', '').strip()
-            description = parsed.get('description', '').strip() or text
+            description = parsed.get('description', '').strip()
 
             if not date_str:
                 await update.message.reply_text(
@@ -986,11 +1019,32 @@ class CommandsMixin:
                 context.user_data['awaiting_plan_client'] = True
                 return
 
+            if not description:
+                # Тема не распознана — спрашиваем до подтверждения (Вариант А)
+                context.user_data['pending_plan'] = {
+                    'action': action, 'date': date_str, 'time': time_str,
+                    'client_id': client.id, 'description': '',
+                }
+                context.user_data['awaiting_plan_description'] = True
+                await update.effective_message.reply_text(
+                    f"📞 Звонок: *{client.first_name} {client.last_name}*\n"
+                    f"📅 {date_str} в {time_str} (MSK)\n\n"
+                    f"📝 О чём звонок? Введите тему (или «—», чтобы без описания):",
+                    parse_mode='Markdown',
+                    reply_markup=main_reply_markup(),
+                )
+                return
+
             await self._show_plan_confirmation(update, context, client, action, date_str, time_str, description)
 
         except Exception as e:
             logger.error(f"Ошибка планирования: {e}", exc_info=True)
-            await update.message.reply_text(f"❌ Ошибка: {e}", reply_markup=main_reply_markup())
+            try:
+                await update.effective_message.reply_text(
+                    f"❌ Ошибка: {e}", reply_markup=main_reply_markup()
+                )
+            except Exception:
+                pass
 
     async def _show_plan_confirmation(self, update, context, client, action, date_str, time_str, description):
         """Показывает подтверждение создания события."""
@@ -1015,24 +1069,21 @@ class CommandsMixin:
         ])
 
         # effective_message: работает и для text, и для callback
+        desc_line = f"📝 {description}\n\n" if description else ""
         await update.effective_message.reply_text(
             f"📋 *Проверьте событие:*\n\n"
             f"👤 {client.first_name} {client.last_name}\n"
             f"📌 Тип: {action_names.get(action, 'событие')}\n"
             f"📅 Дата: {date_str}\n"
             f"🕐 Время: {time_str} (MSK)\n"
-            f"📝 {description}\n\n"
+            f"{desc_line}"
             f"Создать?",
             parse_mode='Markdown',
             reply_markup=keyboard,
         )
 
     async def _create_plan_from_context(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Создаёт событие из context.user_data['confirm_plan'].
-
-        Вызывается из callback (кнопка «✅ Создать»), поэтому используем
-        update.effective_message (update.message = None в callback).
-        """
+        """Создаёт событие из context.user_data['confirm_plan']."""
         from ..time_utils import create_user_datetime, format_user_time
 
         data = context.user_data.pop('confirm_plan', None)
@@ -1053,9 +1104,16 @@ class CommandsMixin:
             scheduled_dt.hour, scheduled_dt.minute,
         )
 
+        action_titles = {
+            'call': 'Звонок', 'meeting': 'Встреча',
+            'reminder': 'Напоминание', 'birthday': 'Поздравление',
+            'custom': 'Событие',
+        }
+        title = data['description'][:100] if data['description'] else action_titles.get(data['action'], 'Событие')
+
         event = await sync_to_async(ScheduledEvent.objects.create)(
             client=client,
-            title=data['description'][:100],
+            title=title,
             description=data['description'],
             event_type=data['action'],
             scheduled_date=scheduled_date,
@@ -1069,10 +1127,11 @@ class CommandsMixin:
             'custom': '📝 событие',
         }
 
+        desc_line = f"📝 {data['description']}\n" if data['description'] else ""
         await update.effective_message.reply_text(
             f"✅ *Событие запланировано!*\n\n"
             f"👤 {client.first_name} {client.last_name}\n"
-            f"📝 {data['description']}\n"
+            f"{desc_line}"
             f"📅 {time_str_msk} (MSK)\n"
             f"📌 Тип: {action_names.get(data['action'], 'событие')}\n\n"
             f"Я напомню вам об этом!",
@@ -1152,4 +1211,4 @@ class CommandsMixin:
             logger.error(f"Ошибка отправки email: {e}")
             await update.message.reply_text(f"❌ Ошибка отправки: {e}", reply_markup=main_reply_markup())
 
-        context.user_data.pop('awaiting_email', None)
+        context.user_data.pop('awaiting_email', None)   
