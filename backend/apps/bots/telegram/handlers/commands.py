@@ -7,7 +7,9 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from django.utils import timezone
 from django.conf import settings
+from django.db.models import Q
 from asgiref.sync import sync_to_async
+
 
 from apps.clients.models import Client, ScheduledEvent
 from apps.clients.utils import normalize_phone
@@ -41,7 +43,6 @@ def _is_phone_search_intent(text_lower: str) -> bool:
 
 def _phone_search_q(text: str):
     """Собирает Q-объект для поиска по телефону с учётом нормализации."""
-    from django.db.models import Q
     q = Q()
     variants = [text]
     if _is_phone_like(text):
@@ -306,7 +307,6 @@ class CommandsMixin:
 
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None):
         from apps.clients.models import Interaction
-        from django.db.models import Q
 
         if text is None:
             text = update.message.text.strip()
