@@ -25,6 +25,7 @@ def _is_phone_like(text: str) -> bool:
     """Похоже ли на телефон (только цифры, +, -, пробелы, скобки), минимум 7 символов."""
     return bool(re.match(r'^[\d+\-\s()]{7,}$', text.strip()))
 
+
 def _extract_digits(text: str) -> str:
     """Оставляет только цифры из строки."""
     return re.sub(r'\D', '', text or '')
@@ -128,10 +129,6 @@ class CommandsMixin:
             return
 
         def _search():
-            # Ищем по цифрам: у клиента phone хранится как +79991234567,
-            # поэтому фильтруем в Python после очистки от нецифровых символов.
-            # (Для небольших баз это быстро; при росте — можно добавить
-            # поле phone_digits + индекс и искать по нему.)
             results = []
             for c in Client.objects.all().only('id', 'first_name', 'last_name', 'phone', 'company'):
                 if digits in _extract_digits(c.phone or ''):
@@ -147,12 +144,10 @@ class CommandsMixin:
             )
             return
 
-        # Если один — открываем карточку сразу
         if len(clients) == 1:
             await show_client_options(update, context, clients[0])
             return
 
-        # Если несколько — показываем список с кнопками
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         text_reply = f"🔍 *Найдено по «{digits}»: {len(clients)}*\n\n"
         keyboard = []
@@ -170,9 +165,6 @@ class CommandsMixin:
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
-
-
-
 
     async def events(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = timezone.now()
@@ -385,6 +377,19 @@ class CommandsMixin:
             )
             return
 
+        # ============ «ЧТО У МЕНЯ СЕГОДНЯ?» (высокий приоритет — выходит из FSM) ============
+        if any(phrase in text_lower for phrase in (
+            'что у меня', 'события на', 'что сегодня', 'что завтра',
+            'план на', 'дела на', 'события сегодня', 'события завтра',
+        )):
+            # Сброс FSM планирования, если «залип»
+            for key in ('awaiting_plan_time', 'awaiting_plan_client',
+                        'pending_plan', 'confirm_plan',
+                        'planning_client_id', 'planning_action_type'):
+                context.user_data.pop(key, None)
+            await self._handle_today_events(update, context, text)
+            return
+
         # ============ ХОББИ ГОЛОСОМ/ТЕКСТОМ ============
         if any(word in text_lower for word in ('хобби', 'увлечени', 'интересы')):
             await self._handle_hobby_voice(update, context, text)
@@ -454,25 +459,16 @@ class CommandsMixin:
                 context.user_data['awaiting_plan_client'] = True
             return
 
-        # ============ «ЧТО У МЕНЯ СЕГОДНЯ?» ============
-        if any(phrase in text_lower for phrase in (
-            'что у меня', 'события на', 'что сегодня', 'что завтра',
-            'план на', 'дела на', 'события сегодня', 'события завтра',
-        )):
-            await self._handle_today_events(update, context, text)
-            return
-        
         # ============ ПОИСК ПО ТЕЛЕФОНУ (голос/текст) ============
         if _is_phone_search_intent(text_lower):
             await self._handle_phone_search(update, context, text)
             return
-        
+
         # ============ ЕСТЕСТВЕННЫЕ КОМАНДЫ ============
         for prefix in ('найди ', 'найти ', 'поиск ', 'ищи ', 'найдите '):
             if text_lower.startswith(prefix):
                 query_text = text[len(prefix):].strip()
                 if query_text:
-                    # Если запрос — только цифры (2-10), ищем по частичному совпадению телефона
                     q_digits = _extract_digits(query_text)
                     has_letters = bool(re.search(r'[A-Za-zА-Яа-я]', query_text))
                     if q_digits and len(q_digits) >= 2 and len(q_digits) <= 10 and not has_letters:
@@ -626,11 +622,9 @@ class CommandsMixin:
         # ============ 4. ПОИСК ============
         if context.user_data.get('finding'):
             context.user_data['finding'] = False
-            from apps.clients.utils import normalize_phone
             import re as _re
 
             digits = re.sub(r'\D', '', text)
-            # Если ввод — только цифры (2-10) → поиск по частичному совпадению
             if digits and len(digits) <= 10 and len(digits) >= 2 and not _re.search(r'[A-Za-zА-Яа-я]', text):
                 def _phone_partial():
                     return [c for c in Client.objects.all().only(
@@ -662,7 +656,6 @@ class CommandsMixin:
                         reply_markup=main_reply_markup(),
                     )
                 return
-
 
             def _search3(t):
                 q = Q(first_name__icontains=t) | Q(last_name__icontains=t)
@@ -906,7 +899,7 @@ class CommandsMixin:
   "action": "call|meeting|reminder|birthday|custom",
   "date": "YYYY-MM-DD",
   "time": "HH:MM",
-  "client_name": "имя клиента или пустая строка",
+  "client_name": "имя клиента в ИМЕНИТЕЛЬНОМ падеже (как в базе: Евгений Кувалдин, а не Евгению Кувалдину), или пустая строка",
   "description": "краткое описание события"
 }}"""
 
@@ -968,11 +961,15 @@ class CommandsMixin:
 
             client = None
             if client_name:
+                # Ищем по первому слову (имя) — устойчиво к падежам
+                first_word = client_name.split()[0] if client_name.split() else ''
                 def _search():
-                    return list(Client.objects.filter(
-                        Q(first_name__icontains=client_name) |
-                        Q(last_name__icontains=client_name)
-                    )[:1])
+                    q = Q(first_name__icontains=first_word)
+                    if ' ' in client_name:
+                        parts = client_name.split()
+                        q |= Q(first_name__icontains=parts[0]) & Q(last_name__icontains=parts[-1])
+                    q |= Q(last_name__icontains=client_name)
+                    return list(Client.objects.filter(q)[:1])
                 clients = await sync_to_async(_search)()
                 if clients:
                     client = clients[0]
@@ -1017,7 +1014,8 @@ class CommandsMixin:
             ]
         ])
 
-        await update.message.reply_text(
+        # effective_message: работает и для text, и для callback
+        await update.effective_message.reply_text(
             f"📋 *Проверьте событие:*\n\n"
             f"👤 {client.first_name} {client.last_name}\n"
             f"📌 Тип: {action_names.get(action, 'событие')}\n"
@@ -1030,18 +1028,22 @@ class CommandsMixin:
         )
 
     async def _create_plan_from_context(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Создаёт событие из context.user_data['confirm_plan']."""
+        """Создаёт событие из context.user_data['confirm_plan'].
+
+        Вызывается из callback (кнопка «✅ Создать»), поэтому используем
+        update.effective_message (update.message = None в callback).
+        """
         from ..time_utils import create_user_datetime, format_user_time
 
         data = context.user_data.pop('confirm_plan', None)
         if not data:
-            await update.message.reply_text("❌ Данные потеряны")
+            await update.effective_message.reply_text("❌ Данные потеряны")
             return
 
         try:
             scheduled_dt = datetime.strptime(f"{data['date']} {data['time']}", "%Y-%m-%d %H:%M")
         except Exception as e:
-            await update.message.reply_text(f"❌ Ошибка даты: {e}")
+            await update.effective_message.reply_text(f"❌ Ошибка даты: {e}")
             return
 
         client = await sync_to_async(Client.objects.get)(id=data['client_id'])
@@ -1067,7 +1069,7 @@ class CommandsMixin:
             'custom': '📝 событие',
         }
 
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             f"✅ *Событие запланировано!*\n\n"
             f"👤 {client.first_name} {client.last_name}\n"
             f"📝 {data['description']}\n"
