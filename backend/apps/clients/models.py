@@ -103,6 +103,7 @@ class ScheduledEvent(models.Model):
     ai_content = models.TextField('Содержание от ИИ', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField('Выполнено в', null=True, blank=True)
+    reminder_sent_at = models.DateTimeField('Напоминание отправлено', null=True, blank=True)
     
     class Meta:
         verbose_name = 'Запланированное событие'
