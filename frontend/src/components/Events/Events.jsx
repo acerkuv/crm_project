@@ -22,7 +22,7 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 dayjs.locale('ru');
 dayjs.extend(relativeTime);
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 // Создаем axios инстанс с токеном
 const api = axios.create({

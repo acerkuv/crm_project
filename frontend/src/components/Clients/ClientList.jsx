@@ -45,7 +45,7 @@ import axios from 'axios'
 import dayjs from 'dayjs'
 import './Clients.css'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API_URL = import.meta.env.VITE_API_URL || ''
 
 // Создаем axios инстанс с токеном
 const api = axios.create({
@@ -237,10 +237,10 @@ const ClientList = () => {
     setCardModalVisible(true)
   }
 
-  const getAvatarUrl = (avatar) => {
+    const getAvatarUrl = (avatar) => {
     if (!avatar) return null
     if (avatar.startsWith('http')) return avatar
-    return `http://localhost:8000${avatar}`
+    return `${API_URL}${avatar}`
   }
 
   const columns = [
