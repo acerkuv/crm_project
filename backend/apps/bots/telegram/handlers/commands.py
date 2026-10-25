@@ -23,6 +23,21 @@ def _is_phone_like(text: str) -> bool:
     """Похоже ли на телефон (только цифры, +, -, пробелы, скобки), минимум 7 символов."""
     return bool(re.match(r'^[\d+\-\s()]{7,}$', text.strip()))
 
+def _extract_digits(text: str) -> str:
+    """Оставляет только цифры из строки."""
+    return re.sub(r'\D', '', text or '')
+
+
+def _is_phone_search_intent(text_lower: str) -> bool:
+    """Определяет, что пользователь хочет искать по телефону/номеру."""
+    patterns = (
+        'по телефону', 'по номеру', 'по телефон', 'по номер',
+        'найди номер', 'найти номер', 'найди телефон', 'найти телефон',
+        'поиск по телефону', 'поиск по номеру',
+        'кто с номером', 'у кого номер', 'чей номер',
+    )
+    return any(p in text_lower for p in patterns)
+
 
 def _phone_search_q(text: str):
     """Собирает Q-объект для поиска по телефону с учётом нормализации."""
@@ -97,6 +112,66 @@ class CommandsMixin:
     async def find(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔍 Введите имя или телефон клиента:")
         context.user_data['finding'] = True
+
+    async def _handle_phone_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Поиск клиентов по частичному совпадению цифр в телефоне.
+
+        «Найди по телефону 77 27» → ищет «7727» в нормализованных телефонах.
+        """
+        digits = _extract_digits(text)
+        if len(digits) < 2:
+            await update.message.reply_text(
+                "🔍 Введите хотя бы 2 цифры номера. Пример: «Найди по телефону 77 27»",
+                reply_markup=main_reply_markup(),
+            )
+            return
+
+        def _search():
+            # Ищем по цифрам: у клиента phone хранится как +79991234567,
+            # поэтому фильтруем в Python после очистки от нецифровых символов.
+            # (Для небольших баз это быстро; при росте — можно добавить
+            # поле phone_digits + индекс и искать по нему.)
+            results = []
+            for c in Client.objects.all().only('id', 'first_name', 'last_name', 'phone', 'company'):
+                if digits in _extract_digits(c.phone or ''):
+                    results.append(c)
+            return results
+
+        clients = await sync_to_async(_search)()
+
+        if not clients:
+            await update.message.reply_text(
+                f"📭 По цифрам «{digits}» никого не найдено.",
+                reply_markup=main_reply_markup(),
+            )
+            return
+
+        # Если один — открываем карточку сразу
+        if len(clients) == 1:
+            await show_client_options(update, context, clients[0])
+            return
+
+        # Если несколько — показываем список с кнопками
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        text_reply = f"🔍 *Найдено по «{digits}»: {len(clients)}*\n\n"
+        keyboard = []
+        for c in clients[:20]:
+            text_reply += f"👤 {c.first_name} {c.last_name} — {c.phone}\n"
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"👤 {c.first_name} {c.last_name} ({c.phone})",
+                    callback_data=f"client_detail_{c.id}",
+                )
+            ])
+        keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")])
+        await update.message.reply_text(
+            text_reply,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+
+
 
     async def events(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = timezone.now()
@@ -386,12 +461,24 @@ class CommandsMixin:
         )):
             await self._handle_today_events(update, context, text)
             return
-
+        
+        # ============ ПОИСК ПО ТЕЛЕФОНУ (голос/текст) ============
+        if _is_phone_search_intent(text_lower):
+            await self._handle_phone_search(update, context, text)
+            return
+        
         # ============ ЕСТЕСТВЕННЫЕ КОМАНДЫ ============
         for prefix in ('найди ', 'найти ', 'поиск ', 'ищи ', 'найдите '):
             if text_lower.startswith(prefix):
                 query_text = text[len(prefix):].strip()
                 if query_text:
+                    # Если запрос — только цифры (2-10), ищем по частичному совпадению телефона
+                    q_digits = _extract_digits(query_text)
+                    has_letters = bool(re.search(r'[A-Za-zА-Яа-я]', query_text))
+                    if q_digits and len(q_digits) >= 2 and len(q_digits) <= 10 and not has_letters:
+                        await self._handle_phone_search(update, context, query_text)
+                        return
+
                     def _search2(t):
                         q = Q(first_name__icontains=t) | Q(last_name__icontains=t)
                         q |= Q(company__icontains=t) | Q(email__icontains=t)
@@ -539,6 +626,43 @@ class CommandsMixin:
         # ============ 4. ПОИСК ============
         if context.user_data.get('finding'):
             context.user_data['finding'] = False
+            from apps.clients.utils import normalize_phone
+            import re as _re
+
+            digits = re.sub(r'\D', '', text)
+            # Если ввод — только цифры (2-10) → поиск по частичному совпадению
+            if digits and len(digits) <= 10 and len(digits) >= 2 and not _re.search(r'[A-Za-zА-Яа-я]', text):
+                def _phone_partial():
+                    return [c for c in Client.objects.all().only(
+                        'id', 'first_name', 'last_name', 'phone', 'company'
+                    ) if digits in re.sub(r'\D', '', c.phone or '')]
+
+                clients = await sync_to_async(_phone_partial)()
+                if clients:
+                    if len(clients) == 1:
+                        await show_client_options(update, context, clients[0])
+                    else:
+                        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                        txt = f"🔍 *Найдено по «{digits}»: {len(clients)}*\n\n"
+                        kb = []
+                        for c in clients[:20]:
+                            txt += f"👤 {c.first_name} {c.last_name} — {c.phone}\n"
+                            kb.append([InlineKeyboardButton(
+                                f"👤 {c.first_name} {c.last_name}",
+                                callback_data=f"client_detail_{c.id}"
+                            )])
+                        kb.append([InlineKeyboardButton("🏠 Меню", callback_data="main_menu")])
+                        await update.message.reply_text(
+                            txt, parse_mode='Markdown',
+                            reply_markup=InlineKeyboardMarkup(kb),
+                        )
+                else:
+                    await update.message.reply_text(
+                        f"📭 По цифрам «{digits}» никого не найдено.",
+                        reply_markup=main_reply_markup(),
+                    )
+                return
+
 
             def _search3(t):
                 q = Q(first_name__icontains=t) | Q(last_name__icontains=t)
