@@ -73,6 +73,57 @@ class CommandsMixin:
             reply_markup=main_reply_markup(),
         )
 
+    async def login_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Генерирует 6-значный код для входа во фронтенд."""
+        import random
+        from datetime import timedelta
+        from apps.users.models import LoginCode, TelegramUser
+
+        tg_id = str(update.effective_user.id)
+        tg_user = await sync_to_async(
+            lambda: TelegramUser.objects.filter(telegram_id=tg_id).first()
+        )()
+
+        if not tg_user:
+            await update.message.reply_text(
+                "❌ Вы не зарегистрированы в системе.\n"
+                "Обратитесь к администратору.",
+                reply_markup=main_reply_markup(),
+            )
+            return
+
+        if not tg_user.user_id:
+            await update.message.reply_text(
+                "❌ К вашему Telegram-аккаунту не привязан пользователь CRM.",
+                reply_markup=main_reply_markup(),
+            )
+            return
+
+        # Инвалидируем старые неиспользованные коды
+        await sync_to_async(
+            lambda: LoginCode.objects.filter(
+                telegram_user=tg_user, is_used=False
+            ).update(is_used=True)
+        )()
+
+        code = f"{random.randint(0, 999999):06d}"
+        expires_at = timezone.now() + timedelta(minutes=10)
+
+        await sync_to_async(LoginCode.objects.create)(
+            telegram_user=tg_user,
+            code=code,
+            expires_at=expires_at,
+        )
+
+        await update.message.reply_text(
+            f"🔐 *Код для входа во фронтенд:*\n\n"
+            f"`{code}`\n\n"
+            f"⏱ Действителен 10 минут.\n"
+            f"Введите его на странице `/login`.",
+            parse_mode='Markdown',
+            reply_markup=main_reply_markup(),
+        )    
+
     async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "📖 *Доступные команды:*\n\n"
