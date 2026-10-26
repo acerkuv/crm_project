@@ -109,6 +109,7 @@ class TelegramBot(PhotosMixin, CommandsMixin, ClientsMixin, EventsMixin,
 
         app.add_handler(CommandHandler("start", self.start))
         app.add_handler(CommandHandler("login", self.login_command))
+        app.add_handler(CommandHandler("register", self.register_command))
         app.add_handler(CommandHandler("help", self.help))
         app.add_handler(CommandHandler("list", self.list_command))
         app.add_handler(CommandHandler("find", self.find))

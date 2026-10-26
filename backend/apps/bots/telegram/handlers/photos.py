@@ -210,7 +210,13 @@ class PhotosMixin:
                     birth_date = None
             elif not birth_date:
                 birth_date = None
-
+            from apps.users.models import TelegramUser
+            tg_user = await sync_to_async(
+                lambda: TelegramUser.objects.filter(
+                    telegram_id=str(update.effective_user.id)
+                ).first()
+            )()
+        
             client = await sync_to_async(Client.objects.create)(
                 first_name=data.get('first_name', '') or 'Без имени',
                 last_name=data.get('last_name', ''),
@@ -221,6 +227,7 @@ class PhotosMixin:
                 birth_date=birth_date,
                 telegram_id=str(update.effective_user.id),
                 status='active',  # автоактивация после скана
+                user=tg_user.user if tg_user else None,   # ← добавить
             )
             await query.edit_message_text(
                 f"✅ *Клиент добавлен и активен:*\n"

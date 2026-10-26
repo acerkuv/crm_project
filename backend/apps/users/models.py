@@ -129,9 +129,9 @@ class TelegramUser(models.Model):
         """Проверка активности подписки"""
         if self.subscription_plan == 'free':
             return True
-        if self.subscription_expires_at:
-            return self.subscription_expires_at > timezone.now()
-        return False
+        if self.subscription_expires_at is None:
+            return True  # бессрочная подписка (платная без даты = ок)
+        return self.subscription_expires_at > timezone.now()
     
     def get_max_clients(self):
         """Получить максимальное количество клиентов"""

@@ -128,6 +128,7 @@ class CommandsMixin:
             "📖 *Доступные команды:*\n\n"
             "/start - Приветствие\n"
             "/login - Код для входа во фронтенд\n"
+            "/register - Регистрация (создать аккаунт)\n"
             "/help - Справка\n"
             "/add - Добавить клиента (контакт)\n"
             "/list - Список клиентов\n"
@@ -147,6 +148,60 @@ class CommandsMixin:
             "«Запланируй звонок Евгению на 25 декабря 18:00»\n"
             "«Что у меня сегодня?»\n"
             "«Хобби Евгения — лыжи, рыбалка, путешествия»",
+            reply_markup=main_reply_markup(),
+        )
+
+    async def register_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Регистрация нового пользователя (создаёт User + TelegramUser)."""
+        from apps.users.models import TelegramUser
+        from django.contrib.auth import get_user_model
+
+        U = get_user_model()
+        tg_id = str(update.effective_user.id)
+        tg = update.effective_user
+
+        tg_user = await sync_to_async(
+            lambda: TelegramUser.objects.filter(telegram_id=tg_id).first()
+        )()
+
+        if tg_user:
+            await update.message.reply_text(
+                f"ℹ️ *Вы уже зарегистрированы*\n\n"
+                f"👤 {tg_user.first_name} {tg_user.last_name or ''}\n"
+                f"📦 Тариф: *{tg_user.get_subscription_display()}*\n"
+                f"👥 Лимит клиентов: {tg_user.get_max_clients() or '∞'}\n"
+                f"📅 Лимит событий/мес: {tg_user.get_max_events() or '∞'}\n\n"
+                f"🔐 Для входа во фронтенд: /login",
+                parse_mode='Markdown',
+                reply_markup=main_reply_markup(),
+            )
+            return
+
+        username = f"tg_{tg_id}"
+        user, _ = await sync_to_async(U.objects.get_or_create)(
+            username=username,
+            defaults={'email': '', 'is_active': True},
+        )
+
+        tg_user = await sync_to_async(TelegramUser.objects.create)(
+            user=user,
+            telegram_id=tg_id,
+            username=tg.username or '',
+            first_name=tg.first_name or 'Пользователь',
+            last_name=tg.last_name or '',
+            role='owner',
+            subscription_plan='free',
+            is_active=True,
+        )
+
+        await update.message.reply_text(
+            f"🎉 *Регистрация успешна!*\n\n"
+            f"👤 {tg_user.first_name} {tg_user.last_name or ''}\n"
+            f"📦 Тариф: *free* (бесплатный)\n"
+            f"👥 Лимит клиентов: 10\n"
+            f"📅 Лимит событий/мес: 50\n\n"
+            f"🔐 Для входа во фронтенд: /login",
+            parse_mode='Markdown',
             reply_markup=main_reply_markup(),
         )
 

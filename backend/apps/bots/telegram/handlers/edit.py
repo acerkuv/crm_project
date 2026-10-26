@@ -206,12 +206,20 @@ class EditMixin:
                 return True
         from apps.clients.models import Client as _C
         from apps.clients.utils import normalize_phone
+        from apps.users.models import TelegramUser
+        tg_user = await sync_to_async(
+            lambda: TelegramUser.objects.filter(
+                telegram_id=str(update.effective_user.id)
+            ).first()
+        )()
         data = {
             'first_name': state['first_name'],
             'phone': normalize_phone(state['phone']) if state['phone'] else None,
             'birth_date': birth,
             'status': 'active',
+            'user': tg_user.user if tg_user else None,   # ← добавить
         }
+        
         if not data['phone']:
             from django.utils import timezone as _tz
             data['phone'] = f"unknown_{int(_tz.now().timestamp())}"
