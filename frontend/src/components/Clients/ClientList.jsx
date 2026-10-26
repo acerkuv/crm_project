@@ -189,10 +189,24 @@ const ClientList = () => {
       form.resetFields()
       fetchClients()
     } catch (error) {
-      console.error('Ошибка сохранения:', error)
-      message.error('Ошибка сохранения')
-    }
-  }
+        console.error('Ошибка сохранения:', error);
+        const err = error.response?.data;
+        if (error.response?.status === 403) {
+          if (err?.error?.includes('лимит')) {
+            message.warning(
+              `⚠️ ${err.error}\n${err.details || ''}\nТекущий план: ${err.plan}\n${err.current}/${err.max}`,
+              5
+            );
+          } else if (err?.error?.includes('Подписка')) {
+            message.error(`❌ ${err.error}. ${err.details || ''}`, 5);
+          } else {
+            message.error(err?.error || 'Доступ запрещён', 5);
+          }
+        } else {
+          message.error('Ошибка сохранения');
+        }
+      }
+  };
 
   const handleAvatarUpload = async (file) => {
     if (!selectedClient) return
