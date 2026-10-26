@@ -46,7 +46,14 @@ def verify_login_code(request):
         
         # Получаем TelegramUser
         telegram_user = login_code.telegram_user
-        
+
+        # Проверка активности аккаунта
+        if not telegram_user.is_active:
+            return Response(
+                {'error': 'Аккаунт заблокирован'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         # Отмечаем код как использованный
         login_code.is_used = True
         login_code.save()
@@ -58,8 +65,8 @@ def verify_login_code(request):
         token, created = Token.objects.get_or_create(user=user)
         
         # Обновляем время последнего входа
-        telegram_user.last_login = timezone.now()
-        telegram_user.save()
+        telegram_user.last_active = timezone.now()
+        telegram_user.save(update_fields=['last_active'])
         
         return Response({
             'success': True,
