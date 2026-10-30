@@ -8,6 +8,7 @@ import requests
 from django.conf import settings
 import os
 
+
 logger = logging.getLogger(__name__)
 
 # Мини-размер для аватарок (70x70)
@@ -76,33 +77,82 @@ def process_avatar(client_id, file_id, token):
 @shared_task
 def check_birthdays():
     """
-    Проверка дней рождения и отправка уведомлений
+    Проверка дней рождения и отправка уведомлений владельцам (по TelegramUser).
+    Запускается каждый день в 9:00 (PeriodicTask «Check birthdays»).
     """
     try:
         from apps.clients.models import Client
-        from django.utils import timezone
-        
+        from apps.users.models import TelegramUser
+
         today = timezone.now().date()
         logger.info(f"🎂 Проверка дней рождения на {today}")
-        
-        clients_list = []
-        for client in Client.objects.filter(birth_date__isnull=False):
-            if client.birth_date:
-                next_birthday = client.birth_date.replace(year=today.year)
-                if next_birthday < today:
-                    next_birthday = next_birthday.replace(year=today.year + 1)
-                days_until = (next_birthday - today).days
-                if 0 <= days_until <= 7:
-                    clients_list.append((client, days_until))
-        
-        if clients_list:
-            for client, days in clients_list:
-                logger.info(f"🎂 {client.first_name} {client.last_name} - через {days} дней")
-        
-        return f"Обработано {len(clients_list)} клиентов с днями рождения"
-        
+
+        token = settings.TELEGRAM_BOT_TOKEN
+        proxy = getattr(settings, 'TELEGRAM_PROXY_URL', '') or None
+        proxies = {'https': proxy, 'http': proxy} if proxy else None
+
+        sent = 0
+        total_clients = 0
+
+        for tg_user in TelegramUser.objects.filter(is_active=True).select_related('user'):
+            # Клиенты этого владельца с ДР в ближайшие 7 дней
+            user_clients = Client.objects.filter(
+                user=tg_user.user,
+                birth_date__isnull=False,
+            )
+
+            upcoming = []
+            for c in user_clients:
+                next_bd = c.birth_date.replace(year=today.year)
+                if next_bd < today:
+                    next_bd = next_bd.replace(year=today.year + 1)
+                days = (next_bd - today).days
+                if 0 <= days <= 7:
+                    upcoming.append((c, days))
+
+            if not upcoming:
+                continue
+
+            total_clients += len(upcoming)
+
+            # Формируем сообщение
+            text = f"🎂 *Дни рождения на неделе* (на {today.strftime('%d.%m.%Y')}):\n\n"
+            for c, d in sorted(upcoming, key=lambda x: x[1]):
+                when = 'сегодня' if d == 0 else f"через {d} дн."
+                text += f"• *{c.first_name} {c.last_name}* — {c.birth_date.strftime('%d.%m')} ({when})\n"
+                if c.phone:
+                    text += f"  📞 {c.phone}\n"
+
+            # Отправляем владельцу
+            try:
+                resp = requests.post(
+                    f'https://api.telegram.org/bot{token}/sendMessage',
+                    json={
+                        'chat_id': tg_user.telegram_id,
+                        'text': text,
+                        'parse_mode': 'Markdown',
+                    },
+                    proxies=proxies,
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    sent += 1
+                    logger.info(
+                        f"🎂 check_birthdays: отправлено {tg_user.telegram_id} "
+                        f"({len(upcoming)} ДР)"
+                    )
+                else:
+                    logger.error(
+                        f"🎂 check_birthdays: {tg_user.telegram_id} → "
+                        f"{resp.status_code}: {resp.text[:200]}"
+                    )
+            except Exception as e:
+                logger.error(f"🎂 check_birthdays: {tg_user.telegram_id}: {e}")
+
+        return f"Отправлено {sent} уведомлений, обработано {total_clients} ДР"
+
     except Exception as e:
-        logger.error(f"❌ Ошибка проверки дней рождения: {e}")
+        logger.error(f"❌ Ошибка проверки дней рождения: {e}", exc_info=True)
         return f"Ошибка: {str(e)}"
 
 @shared_task

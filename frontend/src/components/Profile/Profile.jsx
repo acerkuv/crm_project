@@ -1,35 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Card, message, Space, Divider, Spin } from 'antd';
+import { Form, Input, Button, Card, message, Space, Divider, Spin, Progress, Alert, Tag } from 'antd';
 import { 
   UserOutlined, 
   PhoneOutlined, 
   MailOutlined, 
-  MessageOutlined,  // ← вместо TelegramOutlined
-  CrownOutlined 
+  MessageOutlined,
+  CrownOutlined,
+  RocketOutlined,
+  TeamOutlined,
+  CalendarOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import api from '../../api/client';
 import './Profile.css';
 
 const Profile = () => {
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState(null);
+  const [subscription, setSubscription] = useState(null);
   const [form] = Form.useForm();
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchProfile();
   }, []);
 
-  const fetchProfile = async () => {
+   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/users/profile/');
-      setProfile(response.data);
+      const [profileRes, subRes] = await Promise.all([
+        api.get('/users/profile/'),
+        api.get('/users/subscription/'),
+      ]);
+      setProfile(profileRes.data);
+      setSubscription(subRes.data);
       form.setFieldsValue({
-        email: response.data.user.email || '',
-        first_name: response.data.telegram.first_name || '',
-        last_name: response.data.telegram.last_name || '',
-        phone: response.data.telegram.phone || '',
-        username: response.data.telegram.username || '',
+        email: profileRes.data.user.email || '',
+        first_name: profileRes.data.telegram.first_name || '',
+        last_name: profileRes.data.telegram.last_name || '',
+        phone: profileRes.data.telegram.phone || '',
+        username: profileRes.data.telegram.username || '',
       });
     } catch (error) {
       console.error('Ошибка загрузки профиля:', error);
@@ -104,6 +115,104 @@ const Profile = () => {
               <h3>
                 <CrownOutlined /> Подписка
               </h3>
+                          {/* Лимиты и использование */}
+            {subscription && (
+              <>
+                <div className="profile-section limits-section">
+                  <h3>
+                    <RocketOutlined /> Лимиты и использование
+                  </h3>
+
+                  {/* Предупреждение если лимит превышен */}
+                  {subscription.limits?.clients?.max && subscription.limits.clients.used > subscription.limits.clients.max && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="Лимит клиентов превышен"
+                      description={`У вас ${subscription.limits.clients.used} клиентов, а лимит плана — ${subscription.limits.clients.max}. Обновите тариф, чтобы добавлять новых.`}
+                      style={{ marginBottom: 16 }}
+                    />
+                  )}
+
+                  {/* Клиенты */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span>
+                        <TeamOutlined /> Клиенты
+                      </span>
+                      <span>
+                        <strong>{subscription.limits?.clients?.used ?? 0}</strong>
+                        {' / '}
+                        {subscription.limits?.clients?.max ?? '∞'}
+                      </span>
+                    </div>
+                    <Progress
+                      percent={Math.min(100, Math.round(subscription.limits?.clients?.percent ?? 0))}
+                      status={
+                        subscription.limits?.clients?.max && subscription.limits.clients.used >= subscription.limits.clients.max
+                          ? 'exception'
+                          : 'active'
+                      }
+                      showInfo={false}
+                    />
+                  </div>
+
+                  {/* События */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span>
+                        <CalendarOutlined /> События в этом месяце
+                      </span>
+                      <span>
+                        <strong>{subscription.limits?.events?.used ?? 0}</strong>
+                        {' / '}
+                        {subscription.limits?.events?.max ?? '∞'}
+                      </span>
+                    </div>
+                    <Progress
+                      percent={Math.min(100, Math.round(subscription.limits?.events?.percent ?? 0))}
+                      status={
+                        subscription.limits?.events?.max && subscription.limits.events.used >= subscription.limits.events.max
+                          ? 'exception'
+                          : 'active'
+                      }
+                      showInfo={false}
+                    />
+                  </div>
+
+                  {/* AI запросы */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span>
+                        <RobotOutlined /> AI запросы в этом месяце
+                      </span>
+                      <span>
+                        <strong>{subscription.limits?.ai?.used ?? 0}</strong>
+                        {' / '}
+                        {subscription.limits?.ai?.max || '—'}
+                      </span>
+                    </div>
+                    <Progress
+                      percent={Math.min(100, Math.round(subscription.limits?.ai?.percent ?? 0))}
+                      showInfo={false}
+                    />
+                  </div>
+
+                  <Button
+                    type="primary"
+                    icon={<RocketOutlined />}
+                    onClick={() => navigate('/plans')}
+                    block
+                    size="large"
+                    style={{ marginTop: 8 }}
+                  >
+                    Обновить тариф
+                  </Button>
+                </div>
+
+                <Divider />
+              </>
+            )}
               <div className="profile-info-grid">
                 <div className="info-item">
                   <span className="info-label">План:</span>
