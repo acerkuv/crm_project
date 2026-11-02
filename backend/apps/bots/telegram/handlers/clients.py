@@ -131,7 +131,7 @@ class ClientsMixin:
         await query.answer()
 
         def _get():
-            return Client.objects.all().order_by('-created_at')
+            return list(Client.objects.all().order_by('-created_at'))  # ← list() внутри
 
         clients = await sync_to_async(_get)()
         message_text, keyboard = get_clients_list_message(clients, 1)
@@ -141,25 +141,16 @@ class ClientsMixin:
             logger.error(f"Ошибка редактирования списка: {e}")
             await query.message.reply_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
 
-    async def _handle_list_page(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int):
-        query = update.callback_query
-        await query.answer()
-
-        def _get():
-            return Client.objects.all().order_by('-created_at')
-
-        clients = await sync_to_async(_get)()
-        message_text, keyboard = get_clients_list_message(clients, page)
-        await query.edit_message_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
-
     async def _handle_list_letter(self, update: Update, context: ContextTypes.DEFAULT_TYPE, letter: str):
         query = update.callback_query
         await query.answer()
 
         def _get():
-            return Client.objects.filter(
-                Q(first_name__istartswith=letter) | Q(last_name__istartswith=letter)
-            ).order_by('first_name')
+            return list(                                   # ← добавить list()
+                Client.objects.filter(
+                    Q(first_name__istartswith=letter) | Q(last_name__istartswith=letter)
+                ).order_by('first_name')
+            )
 
         clients = await sync_to_async(_get)()
         if not clients:
@@ -310,6 +301,8 @@ class ClientsMixin:
         await query.edit_message_text(response, parse_mode='Markdown', reply_markup=keyboard)
 
     async def _handle_show_birthdays(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        from apps.bots.telegram.birthday_utils import days_until_birthday
+
         query = update.callback_query
         await query.answer()
 
@@ -318,19 +311,18 @@ class ClientsMixin:
 
         all_clients = await sync_to_async(_get)()
         today = timezone.now().date()
+
         clients_list = []
         for client in all_clients:
-            next_birthday = client.birth_date.replace(year=today.year)
-            if next_birthday < today:
-                next_birthday = next_birthday.replace(year=today.year + 1)
-            days_until = (next_birthday - today).days
-            if 0 <= days_until <= 7:
-                clients_list.append((client, days_until))
+            d = days_until_birthday(client.birth_date, today)
+            if d is not None and 0 <= d <= 7:
+                clients_list.append((client, d))
 
         if clients_list:
             response = "🎂 *Дни рождения в ближайшую неделю:*\n\n"
             for client, days in sorted(clients_list, key=lambda x: x[1]):
-                status_emoji = {'vip': '⭐', 'active': '✅', 'regular': '🔄', 'lead': '🆕', 'inactive': '⏸️'}.get(client.status, '📌')
+                status_emoji = {'vip': '⭐', 'active': '✅', 'regular': '🔄',
+                                'lead': '🆕', 'inactive': '⏸️'}.get(client.status, '📌')
                 response += f"{status_emoji} *{client.first_name} {client.last_name}*\n"
                 response += f"   📞 {client.phone}\n"
                 if client.company:

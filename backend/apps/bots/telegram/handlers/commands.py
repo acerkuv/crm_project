@@ -298,6 +298,8 @@ class CommandsMixin:
         await update.message.reply_text(message, parse_mode='Markdown', reply_markup=main_reply_markup())
 
     async def birthdays(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        from apps.bots.telegram.birthday_utils import days_until_birthday
+
         today = timezone.now().date()
 
         def _get_clients():
@@ -306,26 +308,29 @@ class CommandsMixin:
         all_clients = await sync_to_async(_get_clients)()
         clients_list = []
         for client in all_clients:
-            next_birthday = client.birth_date.replace(year=today.year)
-            if next_birthday < today:
-                next_birthday = next_birthday.replace(year=today.year + 1)
-            days_until = (next_birthday - today).days
-            if 0 <= days_until <= 7:
-                clients_list.append((client, days_until))
+            d = days_until_birthday(client.birth_date, today)
+            if d is not None and 0 <= d <= 7:
+                clients_list.append((client, d))
 
         if not clients_list:
-            await update.message.reply_text("🎂 В ближайшую неделю нет дней рождения.", reply_markup=main_reply_markup())
+            await update.message.reply_text(
+                "🎂 В ближайшую неделю нет дней рождения.",
+                reply_markup=main_reply_markup(),
+            )
             return
 
         message = "🎂 *Дни рождения в ближайшую неделю:*\n\n"
         for client, days in sorted(clients_list, key=lambda x: x[1]):
-            status_emoji = {'vip': '⭐', 'active': '✅', 'regular': '🔄', 'lead': '🆕', 'inactive': '⏸️'}.get(client.status, '📌')
+            status_emoji = {'vip': '⭐', 'active': '✅', 'regular': '🔄',
+                            'lead': '🆕', 'inactive': '⏸️'}.get(client.status, '📌')
             message += f"{status_emoji} *{client.first_name} {client.last_name}*\n"
             message += f"   📞 {client.phone}\n"
             if client.company:
                 message += f"   🏢 {client.company}\n"
             message += f"   📅 {client.birth_date.strftime('%d.%m')} (через {days} дн.)\n\n"
-        await update.message.reply_text(message, parse_mode='Markdown', reply_markup=main_reply_markup())
+        await update.message.reply_text(
+            message, parse_mode='Markdown', reply_markup=main_reply_markup(),
+        )
 
     async def stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         def _get_stats():

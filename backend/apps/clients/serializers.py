@@ -42,9 +42,6 @@ class ClientSerializer(serializers.ModelSerializer):
     def get_days_until_birthday(self, obj):
         if not obj.birth_date:
             return None
-        today = timezone.now().date()
-        next_birthday = obj.birth_date.replace(year=today.year)
-        if next_birthday < today:
-            next_birthday = next_birthday.replace(year=today.year + 1)
-        return (next_birthday - today).days
+        from apps.bots.telegram.birthday_utils import days_until_birthday
+        return days_until_birthday(obj.birth_date, timezone.now().date())
     

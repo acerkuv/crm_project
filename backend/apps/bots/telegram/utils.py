@@ -1,4 +1,5 @@
 from datetime import datetime
+from .birthday_utils import days_until_birthday
 from apps.clients.models import Client, ScheduledEvent
 
 NGROK_URL = "https://553e-194-58-37-17.ngrok-free.app"
@@ -14,9 +15,7 @@ def get_client_card(client, show_avatar=True, compact=False):
         if client.company:
             card += f"🏢 {client.company}\n"
         if client.birth_date:
-            days_until = (client.birth_date.replace(year=datetime.now().year) - datetime.now().date()).days
-            if days_until < 0:
-                days_until = (client.birth_date.replace(year=datetime.now().year + 1) - datetime.now().date()).days
+            days_until = days_until_birthday(client.birth_date) or 0
             card += f"🎂 {client.birth_date.strftime('%d.%m')} (через {days_until} дн.)\n"
         card += f"📅 В базе: {(datetime.now().date() - client.created_at.date()).days} дн."
         
@@ -39,9 +38,7 @@ def get_client_card(client, show_avatar=True, compact=False):
         if client.position:
             card += f"💼 {client.position}\n"
         if client.birth_date:
-            days_until = (client.birth_date.replace(year=datetime.now().year) - datetime.now().date()).days
-            if days_until < 0:
-                days_until = (client.birth_date.replace(year=datetime.now().year + 1) - datetime.now().date()).days
+            days_until = days_until_birthday(client.birth_date) or 0
             card += f"🎂 {client.birth_date.strftime('%d.%m.%Y')} (через {days_until} дн.)\n"
         if getattr(client, 'address', ''):
             card += f"📍 {client.address}\n"

@@ -2,6 +2,7 @@
 import logging
 from datetime import datetime
 from ..time_utils import to_user_time
+# from .birthday_utils import days_until_birthday
 
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -90,9 +91,8 @@ class EventsMixin:
                 "Пожалуйста, подождите ⏳"
             )
             greeting = await self.generate_ai_greeting(client)
-            scheduled_date = client.birth_date.replace(year=timezone.now().year)
-            if scheduled_date < timezone.now().date():
-                scheduled_date = scheduled_date.replace(year=timezone.now().year + 1)
+            from apps.bots.telegram.birthday_utils import next_birthday as _nb
+            scheduled_date = _nb(client.birth_date, timezone.now().date())
 
             event = await sync_to_async(ScheduledEvent.objects.create)(
                 client=client,
@@ -136,9 +136,8 @@ class EventsMixin:
         client_id = context.user_data.get('planning_client_id')
         client = await sync_to_async(Client.objects.get)(id=client_id)
 
-        scheduled_date = client.birth_date.replace(year=timezone.now().year)
-        if scheduled_date < timezone.now().date():
-            scheduled_date = scheduled_date.replace(year=timezone.now().year + 1)
+        from apps.bots.telegram.birthday_utils import next_birthday as _nb
+        scheduled_date = _nb(client.birth_date, timezone.now().date())
 
         event = await sync_to_async(ScheduledEvent.objects.create)(
             client=client,
@@ -176,10 +175,13 @@ class EventsMixin:
 
         if query.data.startswith('send_birthday'):
             if event.client.telegram_id:
-                await send_telegram_message(
+                ok = await sync_to_async(_tg_send_message_sync)(
                     event.client.telegram_id,
                     f"🎉 *Поздравление!*\n\n{event.description}",
                 )
+                if not ok:
+                    await query.edit_message_text("❌ Не удалось отправить (см. логи)")
+                    return
                 event.is_completed = True
                 event.completed_at = timezone.now()
                 await sync_to_async(event.save)()
@@ -611,7 +613,10 @@ class EventsMixin:
         from ..time_utils import to_user_time
         ut = to_user_time(event.scheduled_date)
         time_str = ut.strftime('%d.%m.%Y %H:%M')
-        status = "✅ Выполнено" if event.is_completed else "⏳ Ожидает"
+        if event.is_completed:
+            status = "✅ Отправлено" if event.event_type == 'birthday' else "✅ Выполнено"
+        else:
+            status = "⏳ Ожидает отправки" if event.event_type == 'birthday' else "⏳ Ожидает"
 
         text = (
             f"📌 *{event.title}*\n\n"
@@ -624,6 +629,11 @@ class EventsMixin:
             text += f"\n📝 {event.description}\n"
 
         keyboard = []
+        if event.event_type == 'birthday' and event.client and event.client.telegram_id and not event.is_completed:
+            keyboard.append([InlineKeyboardButton(
+                "📤 Отправить поздравление сейчас",
+                callback_data=f"event_send_birthday_{event.id}"
+            )])
         if not event.is_completed:
             keyboard.append([InlineKeyboardButton(
                 "✅ Отметить выполненным", callback_data=f"event_complete_{event.id}"
@@ -676,6 +686,44 @@ class EventsMixin:
             await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
         except Exception as e:
             logger.error(f"Ошибка: {e}")
+
+    async def _handle_event_send_birthday(self, update, context, event_id):
+        """Ручная отправка birthday-поздравления клиенту (сейчас)."""
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return ScheduledEvent.objects.filter(id=event_id).select_related('client').first()
+
+        event = await sync_to_async(_get)()
+        if not event:
+            await query.edit_message_text("❌ Событие не найдено")
+            return
+        if not (event.client and event.client.telegram_id):
+            await query.edit_message_text("❌ У клиента нет Telegram ID — отправьте вручную.")
+            return
+        if event.is_completed:
+            await query.edit_message_text("ℹ️ Поздравление уже отправлено.")
+            return
+
+        greet_text = event.description or event.title
+        resp_ok = await sync_to_async(_tg_send_message_sync)(
+            event.client.telegram_id, greet_text
+        )
+        if not resp_ok:
+            await query.edit_message_text("❌ Не удалось отправить (см. логи).")
+            return
+
+        def _complete():
+            event.is_completed = True
+            event.completed_at = timezone.now()
+            event.reminder_sent_at = timezone.now()
+            event.save(update_fields=['is_completed', 'completed_at', 'reminder_sent_at'])
+
+        await sync_to_async(_complete)()
+        await query.edit_message_text(
+            f"✅ Поздравление отправлено клиенту {event.client.first_name} {event.client.last_name}"
+        )
 
     async def _handle_event_plan_at(self, update, context, day, month, year, hour=9, minute=0):
         """Запланировать событие на выбранное время — начало FSM."""
@@ -742,3 +790,23 @@ async def send_telegram_message(chat_id, text):
         })
     except Exception as e:
         logger.error(f"Ошибка отправки: {e}")
+
+def _tg_send_message_sync(chat_id, text):
+    """Синхронная отправка через requests; вызывать из sync_to_async. True при успехе."""
+    import requests
+    token = settings.TELEGRAM_BOT_TOKEN
+    proxy = getattr(settings, 'TELEGRAM_PROXY_URL', '') or None
+    proxies = {'https': proxy, 'http': proxy} if proxy else None
+    try:
+        r = requests.post(
+            f'https://api.telegram.org/bot{token}/sendMessage',
+            json={'chat_id': chat_id, 'text': text, 'parse_mode': 'Markdown'},
+            proxies=proxies, timeout=10,
+        )
+        if r.status_code == 200:
+            return True
+        logger.error(f"_tg_send_message_sync: {r.status_code}: {r.text[:200]}")
+        return False
+    except Exception as e:
+        logger.error(f"_tg_send_message_sync: {e}")
+        return False

@@ -233,6 +233,11 @@ class CallbacksMixin:
             event_id = int(data.split('_')[2])
             await self._handle_event_complete(update, context, event_id)
             return
+        
+        if data.startswith('event_send_birthday_'):
+            event_id = int(data.split('_')[3])
+            await self._handle_event_send_birthday(update, context, event_id)
+            return
 
         if data.startswith('event_plan_at_'):
             parts = data.split('_')

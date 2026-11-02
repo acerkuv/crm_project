@@ -176,10 +176,22 @@ class PhotosMixin:
         email = data.get('email', '').strip()
 
         def _find_existing():
+            from apps.clients.utils import normalize_phone
+
             if phone:
-                c = Client.objects.filter(phone=phone).first()
-                if c:
-                    return c
+                # ищем и по нормализованному, и по сырому — на случай старых записей
+                variants = {phone, normalize_phone(phone) if phone else ''}
+                variants.discard('')
+                for v in variants:
+                    c = Client.objects.filter(phone=v).first()
+                    if c:
+                        return c
+                # частичное совпадение по цифрам
+                digits = ''.join(ch for ch in phone if ch.isdigit())
+                if digits:
+                    for c in Client.objects.exclude(phone__isnull=True).only('id', 'phone'):
+                        if digits in ''.join(ch for ch in (c.phone or '') if ch.isdigit()):
+                            return c
             if email:
                 c = Client.objects.filter(email=email).first()
                 if c:
