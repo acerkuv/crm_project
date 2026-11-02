@@ -49,3 +49,4 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
 # ============ Напоминания ============
 OWNER_CHAT_ID = os.environ.get('OWNER_CHAT_ID', '')
 YANDEX_SPEECHKIT_API_KEY = os.environ.get('YANDEX_SPEECHKIT_API_KEY', '')
+TELEGRAM_PROXY_URL = os.environ.get('TELEGRAM_PROXY_URL', '')
