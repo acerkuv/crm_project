@@ -776,20 +776,7 @@ class EventsMixin:
 
 # ============ МОДУЛЬНЫЕ ФУНКЦИИ ============
 
-async def send_telegram_message(chat_id, text):
-    """Отправка сообщения в Telegram (для поздравлений)."""
-    token = settings.TELEGRAM_BOT_TOKEN
-    if not token:
-        return
-    url = f'https://api.telegram.org/bot{token}/sendMessage'
-    try:
-        requests.post(url, json={
-            'chat_id': chat_id,
-            'text': text,
-            'parse_mode': 'Markdown',
-        })
-    except Exception as e:
-        logger.error(f"Ошибка отправки: {e}")
+
 
 def _tg_send_message_sync(chat_id, text):
     """Синхронная отправка через requests; вызывать из sync_to_async. True при успехе."""
