@@ -2,7 +2,6 @@
 import logging
 from datetime import datetime
 from ..time_utils import to_user_time
-# from .birthday_utils import days_until_birthday
 
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -76,8 +75,6 @@ class EventsMixin:
     # ============ ДНИ РОЖДЕНИЯ ============
 
     async def handle_birthday_choice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        from asgiref.sync import sync_to_async
-
         query = update.callback_query
         await query.answer()
 
@@ -130,8 +127,6 @@ class EventsMixin:
         return ConversationHandler.END
 
     async def save_birthday_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        from asgiref.sync import sync_to_async
-
         text = update.message.text
         client_id = context.user_data.get('planning_client_id')
         client = await sync_to_async(Client.objects.get)(id=client_id)
@@ -165,8 +160,6 @@ class EventsMixin:
         context.user_data['awaiting_birthday_text'] = False
 
     async def handle_birthday_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        from asgiref.sync import sync_to_async
-
         query = update.callback_query
         await query.answer()
 
@@ -228,7 +221,6 @@ class EventsMixin:
     # ============ ПЛАНИРОВАНИЕ: ТИП СОБЫТИЯ ============
 
     async def _handle_plan_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
-        """Показать типы событий для клиента."""
         query = update.callback_query
         await query.answer()
 
@@ -252,7 +244,6 @@ class EventsMixin:
         )
 
     async def _handle_plan_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, action_type: str):
-        """Сохранить тип события и запросить описание."""
         query = update.callback_query
         await query.answer()
 
@@ -287,14 +278,13 @@ class EventsMixin:
         for key in ('awaiting_event_description', 'planning_client_id',
                     'planning_action_type', 'event_description_client_id',
                     'event_description_action', 'event_description_text',
-                    'event_scheduled_date'):
+                    'event_scheduled_date', 'event_editing'):
             context.user_data.pop(key, None)
         await update.callback_query.answer("Отменено", show_alert=False)
 
     # ============ КАЛЕНДАРЬ ПЛАНИРОВАНИЯ ============
 
     async def _handle_month(self, update: Update, context: ContextTypes.DEFAULT_TYPE, month: int, year: int):
-        """Выбор месяца."""
         query = update.callback_query
         await query.answer()
 
@@ -309,7 +299,6 @@ class EventsMixin:
         )
 
     async def _handle_day(self, update: Update, context: ContextTypes.DEFAULT_TYPE, day: int, month: int, year: int):
-        """Выбор дня."""
         query = update.callback_query
         await query.answer()
 
@@ -325,7 +314,6 @@ class EventsMixin:
         )
 
     async def _handle_hour(self, update: Update, context: ContextTypes.DEFAULT_TYPE, hour: int):
-        """Выбор часа."""
         query = update.callback_query
         await query.answer()
 
@@ -339,7 +327,6 @@ class EventsMixin:
         )
 
     async def _handle_minute(self, update: Update, context: ContextTypes.DEFAULT_TYPE, hour: int, minute: int):
-        """Выбор минут + создание ScheduledEvent."""
         query = update.callback_query
         await query.answer()
 
@@ -354,7 +341,6 @@ class EventsMixin:
             await query.edit_message_text("❌ Ошибка: данные неполные")
             return
 
-        # Создаём aware datetime в UTC
         try:
             scheduled_date = create_user_datetime(year, month, day, hour, minute)
         except Exception as e:
@@ -403,7 +389,6 @@ class EventsMixin:
             logger.error(f"Ошибка создания события: {e}", exc_info=True)
             await query.edit_message_text(f"❌ Ошибка создания события: {e}")
 
-        # Очищаем состояние
         for key in ('planning_client_id', 'planning_action_type',
                     'planning_day', 'planning_month', 'planning_year',
                     'planning_hour', 'event_description_text'):
@@ -452,10 +437,9 @@ class EventsMixin:
             reply_markup=keyboard,
         )
 
-     # ============ КАЛЕНДАРЬ СОБЫТИЙ ============
+    # ============ КАЛЕНДАРЬ СОБЫТИЙ ============
 
     async def _handle_event_month(self, update, context, month, year):
-        """Переключение месяца в календаре событий."""
         query = update.callback_query
         await query.answer()
         keyboard = get_events_calendar_keyboard(month, year)
@@ -466,7 +450,6 @@ class EventsMixin:
             logger.error(f"Ошибка показа календаря: {e}")
 
     async def _handle_event_today(self, update, context):
-        """Текущий месяц в календаре."""
         query = update.callback_query
         await query.answer()
         today = datetime.now()
@@ -478,7 +461,6 @@ class EventsMixin:
             logger.error(f"Ошибка показа календаря: {e}")
 
     async def _handle_event_day(self, update, context, day, month, year):
-        """Показать 15-минутные слоты дня."""
         from ..keyboards import get_event_day_keyboard
         query = update.callback_query
         await query.answer()
@@ -490,7 +472,6 @@ class EventsMixin:
             logger.error(f"Ошибка показа дня: {e}")
 
     async def _handle_event_hour(self, update, context, day, month, year, hour):
-        """Показать события на конкретный час."""
         from ..keyboards import get_event_time_list_keyboard
         from ..time_utils import to_user_time
         query = update.callback_query
@@ -511,7 +492,6 @@ class EventsMixin:
             key = ut.strftime('%H:%M')
             events_by_time.setdefault(key, []).append(e)
 
-        # Если событий нет — показать слоты 15 минут
         if not events:
             keyboard = get_event_day_keyboard(day, month, year)
             text = f"📅 *{day} {MONTHS_RU[month]} {year}*\n\nНет событий в {hour:02d}:00"
@@ -521,7 +501,6 @@ class EventsMixin:
                 logger.error(f"Ошибка: {e}")
             return
 
-        # Показать события часа
         time_str = f"{hour:02d}:00"
         keyboard = get_event_time_list_keyboard(events_by_time, time_str, day, month, year)
         text = f"📅 *События {day} {MONTHS_RU[month]} {year} в {hour:02d}:00*\n\n"
@@ -535,7 +514,6 @@ class EventsMixin:
             logger.error(f"Ошибка: {e}")
 
     async def _handle_event_hour_empty(self, update, context, day, month, year, hour):
-        """Пустой час — показать слоты 15 минут для планирования."""
         from ..keyboards import get_event_day_keyboard
         query = update.callback_query
         await query.answer()
@@ -547,7 +525,6 @@ class EventsMixin:
             logger.error(f"Ошибка: {e}")
 
     async def _handle_event_time_slot(self, update, context, day, month, year, hour, minute):
-        """Слот 15 минут — события или предложение запланировать."""
         query = update.callback_query
         await query.answer()
 
@@ -600,7 +577,6 @@ class EventsMixin:
             logger.error(f"Ошибка слота: {e}")
 
     async def _handle_event_detail(self, update, context, event_id):
-        """Детали события."""
         query = update.callback_query
         await query.answer()
 
@@ -641,6 +617,9 @@ class EventsMixin:
                 "✅ Отметить выполненным", callback_data=f"event_complete_{event.id}"
             )])
         keyboard.append([InlineKeyboardButton(
+            "✏️ Изменить", callback_data=f"event_edit_menu_{event.id}"
+        )])
+        keyboard.append([InlineKeyboardButton(
             "🗑 Удалить", callback_data=f"event_delete_confirm_{event.id}"
         )])
         keyboard.append([
@@ -656,7 +635,6 @@ class EventsMixin:
             logger.error(f"Ошибка деталей: {e}")
 
     async def _handle_event_complete(self, update, context, event_id):
-        """Отметить событие выполненным."""
         query = update.callback_query
         await query.answer("✅ Событие выполнено")
 
@@ -673,7 +651,6 @@ class EventsMixin:
             await query.edit_message_text("❌ Событие не найдено")
             return
 
-        # Показать детали с обновлённым статусом
         from ..time_utils import to_user_time
         ut = to_user_time(event.scheduled_date)
         text = (
@@ -693,7 +670,6 @@ class EventsMixin:
             logger.error(f"Ошибка: {e}")
 
     async def _handle_event_send_birthday(self, update, context, event_id):
-        """Ручная отправка birthday-поздравления клиенту (сейчас)."""
         query = update.callback_query
         await query.answer()
 
@@ -729,8 +705,10 @@ class EventsMixin:
         await query.edit_message_text(
             f"✅ Поздравление отправлено клиенту {event.client.first_name} {event.client.last_name}"
         )
+
+    # ============ C2: УДАЛЕНИЕ ============
+
     async def _handle_event_delete_confirm(self, update, context, event_id):
-        """Подтверждение удаления события."""
         query = update.callback_query
         await query.answer()
 
@@ -761,7 +739,6 @@ class EventsMixin:
             logger.error(f"delete_confirm: {e}")
 
     async def _handle_event_delete(self, update, context, event_id):
-        """Удаление события."""
         query = update.callback_query
         await query.answer("🗑 Удаляю...")
 
@@ -789,8 +766,195 @@ class EventsMixin:
             await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
         except Exception as e:
             logger.error(f"delete: {e}")
+
+    # ============ C3.1: РЕДАКТИРОВАНИЕ ============
+
+    async def _handle_event_edit_menu(self, update, context, event_id):
+        """Подменю «Что изменить?»."""
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return ScheduledEvent.objects.filter(id=event_id).select_related('client').first()
+
+        event = await sync_to_async(_get)()
+        if not event:
+            await query.edit_message_text("❌ Событие не найдено")
+            return
+
+        from ..time_utils import to_user_time
+        ut = to_user_time(event.scheduled_date)
+        text = (
+            f"✏️ *Что изменить?*\n\n"
+            f"📌 {event.title}\n"
+            f"👤 {event.client.first_name} {event.client.last_name}\n"
+            f"📅 {ut.strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"📝 Описание: {event.description or '—'}\n"
+            f"📌 Тип: {event.event_type}"
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton("📝 Описание", callback_data=f"event_edit_desc_{event.id}")],
+            [InlineKeyboardButton("📌 Тип", callback_data=f"event_edit_type_{event.id}")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data=f"event_detail_{event.id}")],
+        ])
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"edit_menu: {e}")
+
+    async def _handle_event_edit_desc_start(self, update, context, event_id):
+        """Запрос нового описания."""
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return ScheduledEvent.objects.filter(id=event_id).first()
+
+        event = await sync_to_async(_get)()
+        if not event:
+            await query.edit_message_text("❌ Событие не найдено")
+            return
+
+        context.user_data['event_editing'] = {'event_id': event_id, 'field': 'description'}
+
+        await query.edit_message_text(
+            f"📝 *Редактирование описания*\n\n"
+            f"Текущее: {event.description or '—'}\n\n"
+            f"Введите новое описание (или «—», чтобы очистить):"
+        )
+
+    async def _apply_event_edit(self, update, context, text):
+        """Применить редактирование (описание). Возвращает True, если обработано."""
+        data = context.user_data.pop('event_editing', None)
+        if not data:
+            return False
+
+        event_id = data.get('event_id')
+        field = data.get('field')
+        value = '' if text.strip() in ('—', '-') else text.strip()
+
+        def _save():
+            event = ScheduledEvent.objects.filter(id=event_id).first()
+            if not event:
+                return None
+            setattr(event, field, value)
+            event.save(update_fields=[field])
+            return event
+
+        event = await sync_to_async(_save)()
+        if not event:
+            await update.message.reply_text("❌ Событие не найдено")
+            return True
+
+        await update.message.reply_text(
+            f"✅ *Обновлено*\n\n"
+            f"📌 {event.title}\n"
+            f"📝 {value or '—'}",
+            parse_mode='Markdown',
+        )
+
+        # Показываем детали
+        from ..time_utils import to_user_time
+        ut = to_user_time(event.scheduled_date)
+        if event.is_completed:
+            status = "✅ Отправлено" if event.event_type == 'birthday' else "✅ Выполнено"
+        else:
+            status = "⏳ Ожидает отправки" if event.event_type == 'birthday' else "⏳ Ожидает"
+
+        card_text = (
+            f"📌 *{event.title}*\n\n"
+            f"👤 {event.client.first_name} {event.client.last_name}\n"
+            f"📞 {event.client.phone}\n"
+            f"📅 {ut.strftime('%d.%m.%Y %H:%M')}\n"
+            f"📊 {status}\n"
+        )
+        if event.description:
+            card_text += f"\n📝 {event.description}\n"
+
+        keyboard = []
+        if event.event_type == 'birthday' and event.client and event.client.telegram_id and not event.is_completed:
+            keyboard.append([InlineKeyboardButton(
+                "📤 Отправить поздравление сейчас",
+                callback_data=f"event_send_birthday_{event.id}"
+            )])
+        if not event.is_completed:
+            keyboard.append([InlineKeyboardButton(
+                "✅ Отметить выполненным", callback_data=f"event_complete_{event.id}"
+            )])
+        keyboard.append([InlineKeyboardButton(
+            "✏️ Изменить", callback_data=f"event_edit_menu_{event.id}"
+        )])
+        keyboard.append([InlineKeyboardButton(
+            "🗑 Удалить", callback_data=f"event_delete_confirm_{event.id}"
+        )])
+        keyboard.append([
+            InlineKeyboardButton("⬅️ К дню", callback_data=f"event_back_to_day_{ut.day}_{ut.month}_{ut.year}"),
+            InlineKeyboardButton("📅 Календарь", callback_data=f"event_back_to_calendar_{ut.month}_{ut.year}"),
+        ])
+        keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")])
+
+        await update.message.reply_text(
+            card_text, parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        )
+        return True
+
+    async def _handle_event_edit_type_menu(self, update, context, event_id):
+        """Показать клавиатуру типов."""
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return ScheduledEvent.objects.filter(id=event_id).first()
+
+        event = await sync_to_async(_get)()
+        if not event:
+            await query.edit_message_text("❌ Событие не найдено")
+            return
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton("📞 Звонок", callback_data=f"event_edit_type_{event_id}_call")],
+            [InlineKeyboardButton("📅 Встреча", callback_data=f"event_edit_type_{event_id}_meeting")],
+            [InlineKeyboardButton("🎂 Поздравление", callback_data=f"event_edit_type_{event_id}_birthday")],
+            [InlineKeyboardButton("🔔 Напоминание", callback_data=f"event_edit_type_{event_id}_reminder")],
+            [InlineKeyboardButton("📝 Своё событие", callback_data=f"event_edit_type_{event_id}_custom")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data=f"event_detail_{event_id}")],
+        ])
+        await query.edit_message_text(
+            f"📌 *Выберите новый тип:*\n\n"
+            f"Текущий: {event.event_type}",
+            parse_mode='Markdown',
+            reply_markup=keyboard,
+        )
+
+    async def _handle_event_edit_type_apply(self, update, context, event_id, new_type):
+        """Применить новый тип."""
+        query = update.callback_query
+        await query.answer("✅ Сохраняю...")
+
+        def _save():
+            event = ScheduledEvent.objects.filter(id=event_id).first()
+            if not event:
+                return None
+            event.event_type = new_type
+            event.save(update_fields=['event_type'])
+            return event
+
+        event = await sync_to_async(_save)()
+        if not event:
+            await query.edit_message_text("❌ Событие не найдено")
+            return
+
+        await query.edit_message_text(
+            f"✅ *Тип обновлён:* {new_type}\n\n"
+            f"📌 {event.title}",
+            parse_mode='Markdown',
+        )
+        await self._handle_event_detail(update, context, event_id)
+
+    # ============ ПЛАНИРОВАНИЕ: СЛОТ ============
+
     async def _handle_event_plan_at(self, update, context, day, month, year, hour=9, minute=0):
-        """Запланировать событие на выбранное время — начало FSM."""
         query = update.callback_query
         await query.answer()
 
@@ -802,7 +966,6 @@ class EventsMixin:
         context.user_data['finding'] = True
 
         from ..time_utils import format_user_time
-        dt = create_user_datetime(year, month, day, hour, minute)
         time_str = format_user_time(dt)
 
         text = (
@@ -818,7 +981,6 @@ class EventsMixin:
             logger.error(f"Ошибка планирования: {e}")
 
     async def _handle_event_back_to_calendar(self, update, context, month, year):
-        """Назад к календарю событий."""
         query = update.callback_query
         await query.answer()
         keyboard = get_events_calendar_keyboard(month, year)
@@ -829,7 +991,6 @@ class EventsMixin:
             logger.error(f"Ошибка: {e}")
 
     async def _handle_event_back_to_day(self, update, context, day, month, year):
-        """Назад к 15-минутным слотам дня."""
         query = update.callback_query
         await query.answer()
         from ..keyboards import get_event_day_keyboard
@@ -842,8 +1003,6 @@ class EventsMixin:
 
 
 # ============ МОДУЛЬНЫЕ ФУНКЦИИ ============
-
-
 
 def _tg_send_message_sync(chat_id, text):
     """Синхронная отправка через requests; вызывать из sync_to_async. True при успехе."""

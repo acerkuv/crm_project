@@ -233,6 +233,27 @@ class CallbacksMixin:
             event_id = int(data.split('_')[3])
             await self._handle_event_delete_confirm(update, context, event_id)
             return
+        
+        if data.startswith('event_edit_menu_'):
+            event_id = int(data.split('_')[3])
+            await self._handle_event_edit_menu(update, context, event_id)
+            return
+
+        if data.startswith('event_edit_desc_'):
+            event_id = int(data.split('_')[3])
+            await self._handle_event_edit_desc_start(update, context, event_id)
+            return
+
+        if data.startswith('event_edit_type_'):
+            parts = data.split('_')
+            if len(parts) == 5:
+                event_id = int(parts[3])
+                new_type = parts[4]
+                await self._handle_event_edit_type_apply(update, context, event_id, new_type)
+            else:
+                event_id = int(parts[3])
+                await self._handle_event_edit_type_menu(update, context, event_id)
+            return
 
         if data.startswith('event_delete_'):
             event_id = int(data.split('_')[2])

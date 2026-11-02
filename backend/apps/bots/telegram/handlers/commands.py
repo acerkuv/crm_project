@@ -473,6 +473,11 @@ class CommandsMixin:
         if context.user_data.get('editing'):
             if await self._apply_edit_field(update, context, text):
                 return
+
+        if context.user_data.get('event_editing'):
+            if await self._apply_event_edit(update, context, text):
+                return
+            
         if context.user_data.get('custom_field_adding'):
             if await self._apply_custom_field_add(update, context, text):
                 return
