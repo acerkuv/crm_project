@@ -142,40 +142,41 @@ def get_event_day_keyboard(day, month, year):
     """Клавиатура с разбивкой дня на часы и четверти"""
     from apps.clients.models import ScheduledEvent
     from django.utils import timezone
-    import datetime as dt
-    
-    date = datetime(year, month, day)
-    start_date = datetime(year, month, day, 0, 0, 0)
-    end_date = datetime(year, month, day, 23, 59, 59)
-    
+    from datetime import timedelta as _td
+    from .time_utils import create_user_datetime
+
+    # ✅ C1.2a: aware UTC вместо naive datetime
+    start_date = create_user_datetime(year, month, day, 0, 0)
+    end_date = start_date + _td(days=1)
+
     events = ScheduledEvent.objects.filter(
         scheduled_date__gte=start_date,
-        scheduled_date__lte=end_date,
+        scheduled_date__lt=end_date,
         is_completed=False
     ).order_by('scheduled_date')
-    
-    # Создаем словарь событий по времени
+
+    # ✅ C1.2b: округление времени события ВНИЗ до 15-минутного слота
     events_by_time = {}
     for event in events:
-        time_key = to_user_time(event.scheduled_date).strftime("%H:%M")
-        if time_key not in events_by_time:
-            events_by_time[time_key] = []
-        events_by_time[time_key].append(event)
-    
+        ut = to_user_time(event.scheduled_date)
+        minute_bucket = (ut.minute // 15) * 15
+        time_key = f"{ut.hour:02d}:{minute_bucket:02d}"
+        events_by_time.setdefault(time_key, []).append(event)
+
     keyboard = []
-    
+
     # Заголовок
     keyboard.append([
         {"text": f"📅 {day} {MONTHS_RU[month]} {year}", "callback_data": "noop"}
     ])
-    
+
     # Часы с 8:00 до 22:00
     for hour in range(8, 23):
         row = []
         for minute in [0, 15, 30, 45]:
             time_str = f"{hour:02d}:{minute:02d}"
             has_event = time_str in events_by_time
-            
+
             if has_event:
                 # Если есть событие - показываем с точкой и делаем кнопкой
                 event_count = len(events_by_time[time_str])
@@ -190,20 +191,20 @@ def get_event_day_keyboard(day, month, year):
                     "text": f"⬜{time_str}",
                     "callback_data": f"event_empty_{day}_{month}_{year}_{hour}_{minute}"
                 })
-        
+
         keyboard.append(row)
-    
+
     # Легенда
     keyboard.append([
         {"text": "🔴 Есть событие", "callback_data": "noop"},
         {"text": "⬜ Нет события", "callback_data": "noop"}
     ])
-    
+
     keyboard.append([
         {"text": "⬅️ Назад к календарю", "callback_data": f"event_back_to_calendar_{month}_{year}"},
         {"text": "🏠 Главное меню", "callback_data": "main_menu"}
     ])
-    
+
     return {"inline_keyboard": keyboard}
 
 def get_main_menu_keyboard():
