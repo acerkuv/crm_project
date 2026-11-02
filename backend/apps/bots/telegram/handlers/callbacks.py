@@ -229,9 +229,14 @@ class CallbacksMixin:
             await self._handle_event_detail(update, context, event_id)
             return
 
-        if data.startswith('event_complete_'):
+        if data.startswith('event_delete_confirm_'):
+            event_id = int(data.split('_')[3])
+            await self._handle_event_delete_confirm(update, context, event_id)
+            return
+
+        if data.startswith('event_delete_'):
             event_id = int(data.split('_')[2])
-            await self._handle_event_complete(update, context, event_id)
+            await self._handle_event_delete(update, context, event_id)
             return
         
         if data.startswith('event_send_birthday_'):

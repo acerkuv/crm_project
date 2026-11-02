@@ -640,6 +640,9 @@ class EventsMixin:
             keyboard.append([InlineKeyboardButton(
                 "✅ Отметить выполненным", callback_data=f"event_complete_{event.id}"
             )])
+        keyboard.append([InlineKeyboardButton(
+            "🗑 Удалить", callback_data=f"event_delete_confirm_{event.id}"
+        )])
         keyboard.append([
             InlineKeyboardButton("⬅️ К дню", callback_data=f"event_back_to_day_{ut.day}_{ut.month}_{ut.year}"),
             InlineKeyboardButton("📅 Календарь", callback_data=f"event_back_to_calendar_{ut.month}_{ut.year}"),
@@ -726,7 +729,66 @@ class EventsMixin:
         await query.edit_message_text(
             f"✅ Поздравление отправлено клиенту {event.client.first_name} {event.client.last_name}"
         )
+    async def _handle_event_delete_confirm(self, update, context, event_id):
+        """Подтверждение удаления события."""
+        query = update.callback_query
+        await query.answer()
 
+        def _get():
+            return ScheduledEvent.objects.filter(id=event_id).select_related('client').first()
+
+        event = await sync_to_async(_get)()
+        if not event:
+            await query.edit_message_text("❌ Событие не найдено")
+            return
+
+        from ..time_utils import to_user_time
+        ut = to_user_time(event.scheduled_date)
+        text = (
+            f"🗑 *Удалить событие?*\n\n"
+            f"📌 {event.title}\n"
+            f"👤 {event.client.first_name} {event.client.last_name}\n"
+            f"📅 {ut.strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"_Действие необратимо._"
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton("✅ Да, удалить", callback_data=f"event_delete_{event_id}")],
+            [InlineKeyboardButton("❌ Отмена", callback_data=f"event_detail_{event_id}")],
+        ])
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"delete_confirm: {e}")
+
+    async def _handle_event_delete(self, update, context, event_id):
+        """Удаление события."""
+        query = update.callback_query
+        await query.answer("🗑 Удаляю...")
+
+        def _delete():
+            event = ScheduledEvent.objects.filter(id=event_id).first()
+            if not event:
+                return None
+            ut = to_user_time(event.scheduled_date)
+            event.delete()
+            return ut
+
+        from ..time_utils import to_user_time
+        ut = await sync_to_async(_delete)()
+        if ut is None:
+            await query.edit_message_text("❌ Событие уже удалено")
+            return
+
+        text = "✅ *Событие удалено*"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton("⬅️ К дню", callback_data=f"event_back_to_day_{ut.day}_{ut.month}_{ut.year}")],
+            [InlineKeyboardButton("📅 Календарь", callback_data=f"event_back_to_calendar_{ut.month}_{ut.year}")],
+            [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
+        ])
+        try:
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"delete: {e}")
     async def _handle_event_plan_at(self, update, context, day, month, year, hour=9, minute=0):
         """Запланировать событие на выбранное время — начало FSM."""
         query = update.callback_query
