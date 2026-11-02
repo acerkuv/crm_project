@@ -556,7 +556,7 @@ class EventsMixin:
             start = create_user_datetime(year, month, day, hour, minute)
             end = start + timedelta(minutes=15)
             return list(ScheduledEvent.objects.filter(
-                scheduled_date__gte=start, scheчduled_date__lt=end,
+                scheduled_date__gte=start, scheduled_date__lt=end,
             ).order_by('scheduled_date'))
 
         events = await sync_to_async(_get_events)()
