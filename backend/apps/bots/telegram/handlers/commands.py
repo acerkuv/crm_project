@@ -1235,6 +1235,10 @@ class CommandsMixin:
             scheduled_dt.year, scheduled_dt.month, scheduled_dt.day,
             scheduled_dt.hour, scheduled_dt.minute,
         )
+        from apps.bots.telegram.validators import is_past, past_error_message
+        if is_past(scheduled_date):
+            await update.effective_message.reply_text(past_error_message())
+            return
 
         action_titles = {
             'call': 'Звонок', 'meeting': 'Встреча',

@@ -360,6 +360,9 @@ class EventsMixin:
         except Exception as e:
             await query.edit_message_text(f"❌ Ошибка даты: {e}")
             return
+        from ..validators import ensure_future_or_reply
+        if not await ensure_future_or_reply(query, scheduled_date):
+            return
 
         def _get_client():
             return Client.objects.filter(id=client_id).first()
@@ -494,10 +497,11 @@ class EventsMixin:
         await query.answer()
 
         def _get_events():
+            from datetime import timedelta
             start = create_user_datetime(year, month, day, hour, 0)
-            end = create_user_datetime(year, month, day, hour, 59)
+            end = start + timedelta(hours=1)
             return list(ScheduledEvent.objects.filter(
-                scheduled_date__gte=start, scheduled_date__lte=end
+                scheduled_date__gte=start, scheduled_date__lt=end,
             ).order_by('scheduled_date'))
 
         events = await sync_to_async(_get_events)()
@@ -548,13 +552,11 @@ class EventsMixin:
         await query.answer()
 
         def _get_events():
-            start = create_user_datetime(year, month, day, hour, minute)
-            end = create_user_datetime(year, month, day, hour, minute)
-            # +59 секунд
             from datetime import timedelta
-            end = end + timedelta(seconds=59)
+            start = create_user_datetime(year, month, day, hour, minute)
+            end = start + timedelta(minutes=15)
             return list(ScheduledEvent.objects.filter(
-                scheduled_date__gte=start, scheduled_date__lte=end
+                scheduled_date__gte=start, scheчduled_date__lt=end,
             ).order_by('scheduled_date'))
 
         events = await sync_to_async(_get_events)()
@@ -730,8 +732,11 @@ class EventsMixin:
         query = update.callback_query
         await query.answer()
 
-        # Сохраняем выбранное время в context
-        context.user_data['event_scheduled_date'] = create_user_datetime(year, month, day, hour, minute)
+        from ..validators import ensure_future_or_reply
+        dt = create_user_datetime(year, month, day, hour, minute)
+        if not await ensure_future_or_reply(query, dt):
+            return
+        context.user_data['event_scheduled_date'] = dt
         context.user_data['finding'] = True
 
         from ..time_utils import format_user_time
