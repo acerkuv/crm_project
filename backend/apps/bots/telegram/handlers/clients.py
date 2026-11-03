@@ -398,6 +398,11 @@ class ClientsMixin:
             await self.handle_email_action(update, context, client_id)
             return
 
+        # Для «🎂 Поздравить» — 2 кнопки: автоматически (GigaChat) / вручную
+        if action_type == 'birthday':
+            await self.start_event_planning(update, context, client_id, 'birthday')
+            return
+
         await self._handle_plan_start(update, context, client_id)
 
     async def _handle_call_with_log(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
