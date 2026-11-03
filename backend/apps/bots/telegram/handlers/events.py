@@ -209,34 +209,96 @@ class EventsMixin:
                 f"👤 {event.client.first_name} {event.client.last_name}\n"
                 f"📝 {event.description}"
             )
-
     async def generate_ai_greeting(self, client):
+        """Генерация поздравления через GigaChat (fallback — шаблон)."""
         try:
-            if settings.OPENAI_API_KEY:
-                from openai import AsyncOpenAI
-                openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-                prompt = f"""
-                Создай персонализированное поздравление с днем рождения для {client.first_name} {client.last_name}.
-                {"Он/она работает в " + client.company if client.company else ""}
-                {"Должность: " + client.position if client.position else ""}
-                {"Интересы: " + client.comment[:100] if client.comment else ""}
+            import httpx
+            import uuid
 
-                Поздравление должно быть:
-                - Тёплым и искренним
-                - Персонализированным
-                - Коротким (3-4 предложения)
-                """
-                response = await openai_client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=150,
-                    temperature=0.7,
+            auth_key = getattr(settings, 'GIGACHAT_AUTH_KEY', '')
+            if not auth_key:
+                logger.warning("GIGACHAT_AUTH_KEY не задан — fallback на шаблон")
+                return self._fallback_greeting(client)
+
+            # 1. OAuth
+            async with httpx.AsyncClient(verify=False) as http:
+                resp = await http.post(
+                    "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+                    headers={
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Accept": "application/json",
+                        "RqUID": str(uuid.uuid4()),
+                        "Authorization": f"Basic {auth_key}",
+                    },
+                    data="scope=GIGACHAT_API_PERS",
                 )
-                return response.choices[0].message.content
-        except Exception as e:
-            logger.error(f"Ошибка генерации ИИ: {e}")
-        return f"🎉 Дорогой(ая) {client.first_name}! Поздравляю с днём рождения! Желаю счастья, здоровья и успехов во всех начинаниях! 🎂"
+                access_token = resp.json()["access_token"]
 
+            # 2. Промпт
+            parts = [
+                f"Создай персонализированное поздравление с днём рождения для {client.first_name} {client.last_name}.",
+            ]
+            if client.company:
+                parts.append(f"Работает в {client.company}.")
+            if client.position:
+                parts.append(f"Должность: {client.position}.")
+            if client.hobby:
+                parts.append(f"Хобби/интересы: {client.hobby[:200]}.")
+            elif client.comment:
+                parts.append(f"Интересы: {client.comment[:200]}.")
+
+            parts.append(
+                "Требования:\n"
+                "- Тёплое и искреннее\n"
+                "- Персонализированное (используй данные выше)\n"
+                "- Короткое (3-4 предложения)\n"
+                "- Без шаблонных фраз вроде 'дорогой клиент' — по имени\n"
+                "- На русском языке"
+            )
+            prompt = "\n".join(parts)
+
+            # 3. Запрос к GigaChat
+            async with httpx.AsyncClient(verify=False, timeout=60) as http:
+                chat = await http.post(
+                    "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "GigaChat",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.7,
+                        "max_tokens": 200,
+                    },
+                )
+                content = chat.json()["choices"][0]["message"]["content"]
+
+            content = content.strip()
+            # Чистка markdown-обёрток
+            if content.startswith("```"):
+                content = content.strip("`")
+                if content.startswith("json"):
+                    content = content[4:]
+                content = content.strip()
+
+            if content and len(content) > 10:
+                logger.info(f"🎂 GigaChat поздравление для {client.first_name} ({len(content)} символов)")
+                return content
+
+        except Exception as e:
+            logger.error(f"Ошибка GigaChat-генерации поздравления: {e}", exc_info=True)
+
+        return self._fallback_greeting(client)
+
+    def _fallback_greeting(self, client):
+        """Шаблонное поздравление, если GigaChat недоступен."""
+        company = f" (компания {client.company})" if client.company else ""
+        return (
+            f"🎉 Дорогой(ая) {client.first_name}! "
+            f"Поздравляю с днём рождения! "
+            f"Желаю счастья, здоровья и успехов во всех начинаниях{company}. 🎂"
+        )
     # ============ ПЛАНИРОВАНИЕ: ТИП СОБЫТИЯ ============
 
     async def _handle_plan_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
