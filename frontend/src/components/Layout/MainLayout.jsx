@@ -12,6 +12,7 @@ import {
   BellOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  QuestionCircleOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import './MainLayout.css'
@@ -33,7 +34,7 @@ const MainLayout = ({ children }) => {
     navigate('/login')
   }
 
-  const menuItems = [
+    const menuItems = [
     {
       key: '/',
       icon: <DashboardOutlined />,
@@ -63,6 +64,11 @@ const MainLayout = ({ children }) => {
       key: '/profile',
       icon: <UserOutlined />,
       label: 'Профиль',
+    },
+    {
+      key: '/help',
+      icon: <QuestionCircleOutlined />,
+      label: 'Инструкция',      // ← новый пункт
     },
   ]
 

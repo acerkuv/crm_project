@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Инструкция — CRM «УЮт» Бот</title>
+    <meta name="description" content="Полная инструкция по использованию CRM-бота УЮт: добавление клиентов, планирование событий, голосовые команды, напоминания, редактирование и перенос событий.">
+    <style>
+        :root {
+            --bg: #f6f8fb;
+            --card: #ffffff;
+            --text: #1e293b;
+            --muted: #64748b;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --accent-soft: #eff6ff;
+            --border: #e2e8f0;
+            --code-bg: #f1f5f9;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --shadow: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.06);
+            --radius: 14px;
+        }
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f1f5f9;
+            --muted: #94a3b8;
+            --accent: #60a5fa;
+            --accent-hover: #93c5fd;
+            --accent-soft: #1e3a8a;
+            --border: #334155;
+            --code-bg: #0f172a;
+            --shadow: 0 1px 3px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.3);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            transition: background .2s, color .2s;
+        }
+        header { position: sticky; top: 0; z-index: 100; background: var(--card); border-bottom: 1px solid var(--border); backdrop-filter: blur(10px); }
+        .header-inner { max-width: 1200px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 20px; color: var(--text); text-decoration: none; }
+        .logo .badge { background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: #fff; padding: 4px 10px; border-radius: 8px; font-size: 14px; font-weight: 700; }
+        .header-actions { display: flex; align-items: center; gap: 8px; }
+        .icon-btn { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--border); width: 40px; height: 40px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; transition: all .2s; }
+        .icon-btn:hover { background: var(--accent); color: #fff; transform: translateY(-1px); }
+        .hero { background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); color: #fff; padding: 80px 24px 100px; text-align: center; position: relative; overflow: hidden; }
+        .hero::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(255,255,255,.1) 0%, transparent 60%); animation: pulse 15s infinite; }
+        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+        .hero h1 { font-size: clamp(28px, 5vw, 48px); font-weight: 800; margin-bottom: 16px; position: relative; }
+        .hero p { font-size: clamp(16px, 2.5vw, 20px); opacity: .95; max-width: 600px; margin: 0 auto 32px; position: relative; }
+        .hero-badge { display: inline-block; background: rgba(255,255,255,.2); backdrop-filter: blur(10px); padding: 8px 18px; border-radius: 999px; font-size: 14px; font-weight: 600; margin-bottom: 24px; position: relative; }
+        .cta { display: inline-flex; align-items: center; gap: 10px; background: #fff; color: #3b82f6; padding: 14px 28px; border-radius: 12px; font-weight: 700; font-size: 16px; text-decoration: none; box-shadow: 0 8px 20px rgba(0,0,0,.15); transition: all .2s; position: relative; }
+        .cta:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,.25); }
+        .container { max-width: 1200px; margin: -40px auto 0; padding: 0 24px 80px; display: grid; grid-template-columns: 260px 1fr; gap: 32px; position: relative; }
+        @media (max-width: 900px) { .container { grid-template-columns: 1fr; gap: 16px; } }
+        aside { position: sticky; top: 80px; align-self: start; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); max-height: calc(100vh - 100px); overflow-y: auto; }
+        aside::-webkit-scrollbar { width: 6px; }
+        aside::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        .search-box { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: var(--bg); color: var(--text); margin-bottom: 16px; outline: none; transition: border .2s; }
+        .search-box:focus { border-color: var(--accent); }
+        aside nav ul { list-style: none; }
+        aside nav li { margin-bottom: 2px; }
+        aside nav a { display: block; padding: 8px 12px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500; transition: all .15s; }
+        aside nav a:hover { background: var(--accent-soft); color: var(--accent); }
+        aside nav a.active { background: var(--accent); color: #fff; }
+        main { min-width: 0; }
+        section { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 32px; margin-bottom: 24px; box-shadow: var(--shadow); scroll-margin-top: 80px; }
+        section h2 { font-size: 26px; font-weight: 800; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; }
+        section h2 .emoji { background: var(--accent-soft); width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+        section h3 { font-size: 18px; font-weight: 700; margin: 24px 0 12px; color: var(--text); }
+        section p, section li { color: var(--text); margin-bottom: 10px; }
+        section ul, section ol { padding-left: 24px; }
+        section li { margin-bottom: 8px; }
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 20px 0; }
+        .card { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; transition: all .2s; }
+        .card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+        .card-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; margin-bottom: 12px; background: var(--accent-soft); }
+        .card h4 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+        .card p { font-size: 14px; color: var(--muted); margin: 0; }
+        .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); margin: 16px 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { background: var(--accent-soft); font-weight: 700; color: var(--text); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: var(--bg); }
+        code { background: var(--code-bg); padding: 2px 6px; border-radius: 6px; font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: .9em; color: var(--accent); }
+        pre { background: var(--code-bg); padding: 16px; border-radius: 12px; overflow-x: auto; margin: 16px 0; font-size: 14px; border: 1px solid var(--border); }
+        pre code { background: none; padding: 0; color: var(--text); }
+        .callout { padding: 16px 20px; border-radius: 12px; margin: 16px 0; border-left: 4px solid var(--accent); background: var(--accent-soft); }
+        .callout.warning { border-color: var(--warning); background: rgba(245,158,11,.1); }
+        .callout.danger { border-color: var(--danger); background: rgba(239,68,68,.1); }
+        .callout.success { border-color: var(--success); background: rgba(16,185,129,.1); }
+        .callout p { margin: 0; }
+        .callout p + p { margin-top: 8px; }
+        .tag { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; background: var(--accent-soft); color: var(--accent); margin-right: 4px; }
+        .tag.success { background: rgba(16,185,129,.15); color: #059669; }
+        .tag.warning { background: rgba(245,158,11,.15); color: #b45309; }
+        .tag.danger { background: rgba(239,68,68,.15); color: #dc2626; }
+        .step { display: flex; gap: 16px; margin-bottom: 16px; }
+        .step-num { flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+        .step-content { flex: 1; }
+        .step-content strong { display: block; margin-bottom: 4px; }
+        footer { border-top: 1px solid var(--border); padding: 32px 24px; text-align: center; color: var(--muted); font-size: 14px; }
+        footer a { color: var(--accent); text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
+        .hidden { display: none !important; }
+        @media print {
+            header, aside, .hero .cta, footer { display: none; }
+            .container { display: block; margin: 0; padding: 0; }
+            section { page-break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
+            body { background: #fff; color: #000; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-inner">
+        <a href="#" class="logo">
+            <span class="badge">CRM</span>
+            <span>УЮт Бот</span>
+        </a>
+        <div class="header-actions">
+            <button class="icon-btn" id="theme-toggle" title="Тёмная/светлая тема">🌙</button>
+            <button class="icon-btn" onclick="window.print()" title="Распечатать">🖨️</button>
+        </div>
+    </div>
+</header>
+
+<div class="hero">
+    <div class="hero-badge">📖 Версия 1.1 · 03.11.2026</div>
+    <h1>Полная инструкция<br>по CRM-боту «УЮт»</h1>
+    <p>Всё, что нужно знать: клиенты, события, редактирование, перенос, напоминания, голосовые команды</p>
+    <a href="#quickstart" class="cta">🚀 Быстрый старт</a>
+</div>
+
+<div class="container">
+    <aside>
+        <input type="search" class="search-box" id="search" placeholder="🔍 Поиск по инструкции...">
+        <nav>
+            <ul id="toc">
+                <li><a href="#quickstart">🚀 Быстрый старт</a></li>
+                <li><a href="#menu">📋 Главное меню</a></li>
+                <li><a href="#add-client">👤 Добавление клиента</a></li>
+                <li><a href="#client-card">🎴 Карточка клиента</a></li>
+                <li><a href="#edit-client">✏️ Редактирование</a></li>
+                <li><a href="#notes">🗑 Заметки</a></li>
+                <li><a href="#custom-fields">➕ Доп. поля</a></li>
+                <li><a href="#planning">📅 Планирование</a></li>
+                <li><a href="#event-actions">🎬 Действия с событием</a></li>
+                <li><a href="#reminders">🔔 Напоминания</a></li>
+                <li><a href="#search">🔍 Поиск</a></li>
+                <li><a href="#voice">🎤 Голосовые команды</a></li>
+                <li><a href="#birthdays">🎂 Дни рождения</a></li>
+                <li><a href="#stats">📊 Статистика</a></li>
+                <li><a href="#avatar">📸 Аватарки</a></li>
+                <li><a href="#statuses">🗂️ Статусы</a></li>
+                <li><a href="#tips">💡 Советы</a></li>
+                <li><a href="#troubleshoot">🆘 Если что-то не так</a></li>
+            </ul>
+        </nav>
+    </aside>
+
+    <main id="content">
+
+        <section id="quickstart">
+            <h2><span class="emoji">🚀</span> Быстрый старт</h2>
+            <div class="step">
+                <div class="step-num">1</div>
+                <div class="step-content">
+                    <strong>Открой Telegram</strong>
+                    Найди своего бота в списке контактов или по ссылке.
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-num">2</div>
+                <div class="step-content">
+                    <strong>Нажми <code>/start</code></strong>
+                    Появится приветствие и меню внизу экрана.
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-num">3</div>
+                <div class="step-content">
+                    <strong>Пользуйся кнопками или голосом</strong>
+                    Всё управление — через меню внизу или голосовые команды 🎤.
+                </div>
+            </div>
+            <div class="callout success">
+                <p>💡 <strong>Голосовые команды работают везде:</strong> «Найди Ивана», «Запланируй звонок на 25 декабря», «Что у меня завтра?»</p>
+            </div>
+        </section>
+
+        <section id="menu">
+            <h2><span class="emoji">📋</span> Главное меню (внизу экрана)</h2>
+            <div class="card-grid">
+                <div class="card"><div class="card-icon">📋</div><h4>Список</h4><p>Все клиенты с карточками и кнопками</p></div>
+                <div class="card"><div class="card-icon">🔍</div><h4>Поиск</h4><p>По имени, телефону, компании, email</p></div>
+                <div class="card"><div class="card-icon">📅</div><h4>События</h4><p>Календарь запланированных событий</p></div>
+                <div class="card"><div class="card-icon">➕</div><h4>Добавить</h4><p>Контакт, визитка или вручную</p></div>
+                <div class="card"><div class="card-icon">📊</div><h4>Статистика</h4><p>Всего, по статусам, события</p></div>
+                <div class="card"><div class="card-icon">🎂</div><h4>Дни рождения</h4><p>ДР в ближайшие 7 дней</p></div>
+                <div class="card"><div class="card-icon">❓</div><h4>Помощь</h4><p>Справка по командам</p></div>
+            </div>
+        </section>
+
+        <section id="add-client">
+            <h2><span class="emoji">👤</span> Добавление клиента — 3 способа</h2>
+
+            <h3>Способ 1: Контакт из Telegram 📎</h3>
+            <ol>
+                <li><strong>➕ Добавить</strong> → 📎 → <strong>Контакт</strong></li>
+                <li>Выбери контакт из телефонной книги</li>
+                <li>Клиент создаётся <span class="tag success">сразу активным</span> и <strong>открывается его карточка</strong> с действиями</li>
+            </ol>
+
+            <h3>Способ 2: Фото визитки 📷</h3>
+            <ol>
+                <li>Отправь <strong>фото визитки</strong> боту</li>
+                <li>Бот распознаёт: имя, фамилию, телефон, email, компанию, должность, <strong>дату рождения</strong></li>
+                <li>Нажми <strong>✅ Сохранить</strong> — клиент создаётся <span class="tag success">активным</span>, карточка <strong>открывается сразу</strong></li>
+            </ol>
+            <div class="callout">
+                <p>💡 Телефон нормализуется автоматически: <code>8 999 123 45 67</code> → <code>+79991234567</code></p>
+                <p>💡 Дата рождения распознаётся, если она есть на визитке</p>
+            </div>
+
+            <h3>Способ 3: Вручную ✍️</h3>
+            <ol>
+                <li><strong>➕ Добавить</strong> → <strong>✍️ Добавить вручную</strong></li>
+                <li>Шаг 1/3 — введи <strong>имя</strong></li>
+                <li>Шаг 2/3 — введи <strong>телефон</strong> (или «—», чтобы пропустить)</li>
+                <li>Шаг 3/3 — введи <strong>дату рождения</strong> <code>ДД.ММ.ГГГГ</code> (или «—»)</li>
+                <li>Клиент создаётся <span class="tag success">активным</span>, карточка <strong>открывается сразу</strong></li>
+            </ol>
+        </section>
+
+        <section id="client-card">
+            <h2><span class="emoji">🎴</span> Карточка клиента</h2>
+            <p>Открывается: после добавления, из списка (кнопка <code>👤 Имя</code>), из поиска, из голосового поиска.</p>
+
+            <h3>Что видно в карточке</h3>
+            <ul>
+                <li>Статус (⭐ VIP, ✅ Активный, 🆕 Лид и т.д.)</li>
+                <li>ФИО, телефон, email, компания, должность</li>
+                <li>🎂 Дата рождения + сколько дней до ДР</li>
+                <li>📍 Адрес, 🎯 Хобби</li>
+                <li>📝 Комментарий</li>
+                <li>➕ Доп. поля (кастомные, например «Аллергии»)</li>
+                <li>📝 Последние 3 заметки</li>
+                <li>📅 Запланированные события</li>
+            </ul>
+
+            <h3>Кнопки в карточке</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Кнопка</th><th>Действие</th></tr></thead>
+                    <tbody>
+                        <tr><td>📞 Позвонить</td><td>Телефон станет кликабельным + запись в истории</td></tr>
+                        <tr><td>✉️ Написать</td><td>Отправить email (нужен email в карточке)</td></tr>
+                        <tr><td>🎂 Поздравить</td><td>Сгенерировать/запланировать поздравление</td></tr>
+                        <tr><td>📅 Встреча</td><td>Запланировать встречу</td></tr>
+                        <tr><td>🔔 Напомнить</td><td>Создать напоминание</td></tr>
+                        <tr><td>📝 Заметка</td><td>Добавить заметку</td></tr>
+                        <tr><td>📅 План</td><td>Открыть календарь планирования</td></tr>
+                        <tr><td>🖼️ Аватарка</td><td>Показать аватар</td></tr>
+                        <tr><td>🎯 Хобби</td><td>Изменить хобби</td></tr>
+                        <tr><td>🤖 ИИ помощь</td><td>GigaChat-помощник</td></tr>
+                        <tr><td>✏️ Редактировать</td><td>Менять любое поле</td></tr>
+                        <tr><td>🗑 Заметки</td><td>Список заметок с удалением</td></tr>
+                        <tr><td>➕ Доп. поля</td><td>Кастомные поля (Аллергии, Размер одежды и т.д.)</td></tr>
+                        <tr><td>⬅️ Назад к списку</td><td>Вернуться</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="edit-client">
+            <h2><span class="emoji">✏️</span> Редактирование карточки</h2>
+            <p><strong>✏️ Редактировать</strong> → выбери поле:</p>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Поле</th><th>Формат</th></tr></thead>
+                    <tbody>
+                        <tr><td>👤 Имя</td><td>текст</td></tr>
+                        <tr><td>👤 Фамилия</td><td>текст</td></tr>
+                        <tr><td>📞 Телефон</td><td><code>+7XXXXXXXXXX</code> / <code>8XXXXXXXXXX</code> / <code>9991234567</code> — нормализуется</td></tr>
+                        <tr><td>✉️ Email</td><td><code>name@example.com</code></td></tr>
+                        <tr><td>📅 Дата рождения</td><td><code>ДД.ММ.ГГГГ</code> (например, <code>25.12.1990</code>)</td></tr>
+                        <tr><td>🏢 Компания</td><td>текст</td></tr>
+                        <tr><td>💼 Должность</td><td>текст</td></tr>
+                        <tr><td>🎯 Хобби</td><td>текст</td></tr>
+                        <tr><td>📍 Адрес</td><td>текст</td></tr>
+                        <tr><td>📝 Комментарий</td><td>текст</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="callout">
+                <p>💡 «—» в любом поле = <strong>очистить</strong> поле</p>
+            </div>
+        </section>
+
+        <section id="notes">
+            <h2><span class="emoji">🗑</span> Заметки</h2>
+            <p><strong>🗑 Заметки</strong> в карточке:</p>
+            <ul>
+                <li>Список всех заметок с датами</li>
+                <li><strong>🗑</strong> рядом с каждой — <strong>удалить</strong> (soft-delete, не пропадает из БД)</li>
+                <li><strong>➕ Добавить заметку</strong> — новая заметка</li>
+            </ul>
+        </section>
+
+        <section id="custom-fields">
+            <h2><span class="emoji">➕</span> Доп. поля (кастомные)</h2>
+            <p><strong>➕ Доп. поля</strong> в карточке:</p>
+            <ul>
+                <li>Список кастомных полей (<code>Аллергии: пыль</code>, <code>Размер одежды: L</code>)</li>
+                <li><strong>🗑</strong> — удалить поле</li>
+                <li><strong>➕ Добавить поле</strong> — введи <strong>название</strong> → <strong>значение</strong></li>
+            </ul>
+            <div class="callout">
+                <p>💡 Кастомные поля можно придумать любые: «Любимый напиток», «Размер обуви», «Дата последнего контакта» и т.д.</p>
+            </div>
+        </section>
+
+        <section id="planning">
+            <h2><span class="emoji">📅</span> Планирование событий</h2>
+
+            <h3>Из карточки клиента</h3>
+            <p><strong>📅 План</strong> → выбери тип события:</p>
+            <ul>
+                <li>📞 Позвонить</li>
+                <li>📅 Встреча</li>
+                <li>🎂 Поздравить</li>
+                <li>🔔 Напомнить</li>
+                <li>📝 Своё событие</li>
+            </ul>
+            <p>→ введи <strong>описание</strong> → выбери <strong>месяц</strong> → <strong>день</strong> → <strong>час</strong> → <strong>минуты</strong> → событие создано.</p>
+
+            <h3>Голосом 🎤</h3>
+            <ul>
+                <li><strong>«Запланируй звонок Евгению на 25 декабря в 18 часов»</strong></li>
+                <li><strong>«Напомни Ивану завтра в 10:00»</strong></li>
+                <li><strong>«Запланируй встречу с Петровым 1 ноября в 15:00»</strong></li>
+            </ul>
+            <p><strong>Как это работает:</strong></p>
+            <ol>
+                <li>GigaChat парсит: тип, дату, время, клиента, описание</li>
+                <li>Если <strong>тема не распознана</strong> — бот <strong>спросит</strong> «О чём звонок?» (введи тему или «—»)</li>
+                <li>Покажет <strong>подтверждение</strong> → <strong>✅ Создать</strong> / <strong>❌ Отмена</strong></li>
+            </ol>
+
+            <h3>Календарь</h3>
+            <p><strong>📅 События</strong> в меню → календарь:</p>
+            <ul>
+                <li>Точки на днях с событиями</li>
+                <li>Клик по дню → список слотов (15-мин)</li>
+                <li>Клик по слоту → создать событие / открыть существующее</li>
+            </ul>
+
+            <div class="callout warning">
+                <p>⚠️ <strong>Прошлое запрещено:</strong> нельзя создать событие на прошедшую дату/время. Бот откажет: «❌ Нельзя планировать событие в прошлом. Выберите будущую дату и время.»</p>
+            </div>
+            <div class="callout">
+                <p>💡 <strong>Слоты 15 минут:</strong> событие с произвольными секундами (например, <code>18:36:45</code>) отображается в слоте <code>18:30</code> (округление вниз). Внутри слота видно <strong>все</strong> события этого 15-минутного интервала.</p>
+            </div>
+        </section>
+
+        <section id="event-actions">
+            <h2><span class="emoji">🎬</span> Действия с событием</h2>
+            <p>Открой событие в календаре (день → час → слот → 🔍 название) — увидишь кнопки:</p>
+
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Кнопка</th><th>Что делает</th></tr></thead>
+                    <tbody>
+                        <tr><td>📤 Отправить поздравление сейчас</td><td>Только для 🎂-событий: сразу отправить текст клиенту в Telegram</td></tr>
+                        <tr><td>✅ Отметить выполненным</td><td>Помечает событие как выполненное</td></tr>
+                        <tr><td>✏️ Изменить</td><td>Меняет описание или тип события</td></tr>
+                        <tr><td>🔄 Перенести</td><td>Меняет дату/время (календарь → день → час → минуты)</td></tr>
+                        <tr><td>🗑 Удалить</td><td>Удаляет с подтверждением (✅ Да / ❌ Отмена)</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>✏️ Изменить</h3>
+            <ul>
+                <li><strong>📝 Описание</strong> — введи новый текст (или «—», чтобы очистить)</li>
+                <li><strong>📌 Тип</strong> — 📞 звонок / 📅 встреча / 🎂 поздравление / 🔔 напоминание / 📝 своё</li>
+                <li><strong>⬅️ Назад</strong> — вернуться в детали без изменений</li>
+            </ul>
+
+            <h3>🔄 Перенести</h3>
+            <ol>
+                <li>Откроется календарь (текущий месяц) — прошедшие дни <code>◻️</code> некликабельны</li>
+                <li>Выбери <strong>день</strong> → <strong>час</strong> → <strong>минуты</strong></li>
+                <li>Готово: <code>✅ Событие перенесено</code>, напоминание сработает в новое время</li>
+            </ol>
+            <div class="callout warning">
+                <p>⚠️ <strong>Нельзя перенести в прошлое</strong> — бот откажет: «❌ Нельзя планировать событие в прошлом».</p>
+            </div>
+            <div class="callout success">
+                <p>✅ После переноса <code>reminder_sent_at</code> сбрасывается — напоминание <strong>сработает заново</strong> по новой дате.</p>
+            </div>
+
+            <h3>🗑 Удалить</h3>
+            <p>Подтверждение: <strong>✅ Да, удалить</strong> / <strong>❌ Отмена</strong>. «Отмена» вернёт в детали — событие <strong>не удалится</strong>.</p>
+            <div class="callout danger">
+                <p>⚠️ <strong>Удаление необратимо.</strong> Событие исчезает из БД, календаря и напоминаний.</p>
+            </div>
+        </section>
+
+        <section id="reminders">
+            <h2><span class="emoji">🔔</span> Напоминания о событиях</h2>
+            <p><strong>Автоматически</strong>, за <strong>5 минут</strong> до события бот пришлёт напоминание:</p>
+            <pre><code>🔔 Напоминание
+
+📌 Пригласить на кофе
+👤 Иван Петров
+📞 +79991234567
+📅 25.10 20:41</code></pre>
+            <p>Работает через <strong>Celery Beat</strong> (каждую минуту проверяет окно <code>[now−1м, now+5м]</code>).</p>
+            <div class="callout success">
+                <p>✅ <strong>Антидублирование:</strong> <code>reminder_sent_at</code> не даёт отправить повторно.</p>
+            </div>
+            <div class="callout">
+                <p>💡 <strong>После переноса</strong> события (🔄) напоминание сработает <strong>заново</strong> — по новой дате. Если у клиента нет Telegram ID — приходит владельцу с пометкой «отправьте поздравление вручную».</p>
+            </div>
+        </section>
+
+        <section id="search">
+            <h2><span class="emoji">🔍</span> Поиск</h2>
+
+            <h3>Обычный (🔍 Поиск)</h3>
+            <p>Введи имя / телефон / компанию / email → найдёт клиента.</p>
+
+            <h3>По цифрам телефона</h3>
+            <ul>
+                <li><strong>«Найди по телефону 77 27»</strong> → найдёт всех, у кого в номере <code>7727</code></li>
+                <li><strong>«Найди 77 27»</strong> (без «по телефону») → тоже</li>
+                <li><strong>«Найди номер 723»</strong> → по <code>723</code></li>
+            </ul>
+
+            <h3>Голосом 🎤</h3>
+            <ul>
+                <li><strong>«Найди Ивана»</strong></li>
+                <li><strong>«Найди по телефону 8 999»</strong></li>
+                <li><strong>«Поиск Петров»</strong></li>
+            </ul>
+        </section>
+
+        <section id="voice">
+            <h2><span class="emoji">🎤</span> Голосовые команды — сводка</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Команда</th><th>Что делает</th></tr></thead>
+                    <tbody>
+                        <tr><td>«Найди Ивана»</td><td>Поиск клиента по имени</td></tr>
+                        <tr><td>«Найди по телефону 77 27»</td><td>Поиск по цифрам телефона</td></tr>
+                        <tr><td>«Список клиентов»</td><td>Открыть список</td></tr>
+                        <tr><td>«Статистика»</td><td>Показать статистику</td></tr>
+                        <tr><td>«События»</td><td>Открыть календарь</td></tr>
+                        <tr><td>«Дни рождения»</td><td>Ближайшие ДР</td></tr>
+                        <tr><td>«Что у меня сегодня?»</td><td>События на сегодня (текст + <strong>голос</strong>)</td></tr>
+                        <tr><td>«Что у меня завтра?»</td><td>События на завтра</td></tr>
+                        <tr><td>«Что у меня 25 декабря?»</td><td>События на конкретную дату</td></tr>
+                        <tr><td>«Запланируй звонок Евгению на 25 декабря в 18:00»</td><td>Создать событие</td></tr>
+                        <tr><td>«Напомни Ивану завтра в 10:00»</td><td>Создать напоминание</td></tr>
+                        <tr><td>«Хобби Евгения — лыжи, рыбалка»</td><td>Сохранить хобби</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="birthdays">
+            <h2><span class="emoji">🎂</span> Дни рождения</h2>
+            <p><strong>🎂 Дни рождения</strong> в меню → клиенты с ДР в <strong>ближайшие 7 дней</strong>:</p>
+            <pre><code>🎂 Дни рождения в ближайшую неделю:
+
+⭐ Иван Петров
+   📞 +79991234567
+   🏢 ООО Ромашка
+   📅 28.10 (через 3 дн.)</code></pre>
+            <p><strong>Из карточки:</strong> <strong>🎂 Поздравить</strong> → выбрать:</p>
+            <ul>
+                <li><strong>🎂 Поздравить автоматически</strong> — GigaChat сгенерирует поздравление</li>
+                <li><strong>✍️ Написать самому</strong> — ввести текст (можно с <code>{{first_name}}</code>, <code>{{company}}</code>)</li>
+            </ul>
+            <p>→ <strong>📤 Отправить сейчас</strong> или <strong>📅 Запланировать</strong>.</p>
+            <div class="callout">
+                <p>💡 <strong>29 февраля:</strong> если у клиента ДР 29.02, в невисокосный год бот поздравит <strong>28 февраля</strong>.</p>
+            </div>
+        </section>
+
+        <section id="stats">
+            <h2><span class="emoji">📊</span> Статистика</h2>
+            <p><strong>📊 Статистика</strong> в меню:</p>
+            <pre><code>📊 Статистика CRM:
+
+👥 Всего клиентов: XX
+
+По статусам:
+⭐ VIP: X
+✅ Активные: X
+🔄 Постоянные: X
+🆕 Лиды: X
+
+📅 Запланировано событий: XX
+🤖 Сгенерировано ИИ: X</code></pre>
+            <p><em>(цифры меняются в зависимости от вашей базы)</em></p>
+        </section>
+
+        <section id="avatar">
+            <h2><span class="emoji">📸</span> Аватарки</h2>
+            <p><code>/avatar Имя</code> → найди клиента → отправь <strong>фото</strong> → сохранится как аватар (400×400, сжатый).</p>
+        </section>
+
+        <section id="statuses">
+            <h2><span class="emoji">🗂️</span> Статусы клиентов</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Статус</th><th>Значение</th></tr></thead>
+                    <tbody>
+                        <tr><td>🆕 <code>lead</code></td><td>Лид (новый, не обработан)</td></tr>
+                        <tr><td>✅ <code>active</code></td><td>Активный (работаем)</td></tr>
+                        <tr><td>🔄 <code>regular</code></td><td>Постоянный</td></tr>
+                        <tr><td>⭐ <code>vip</code></td><td>VIP</td></tr>
+                        <tr><td>⏸️ <code>inactive</code></td><td>Неактивный</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="callout">
+                <p>💡 При добавлении (любым способом) клиент <strong>сразу <code>active</code></strong>.</p>
+            </div>
+        </section>
+
+        <section id="tips">
+            <h2><span class="emoji">💡</span> Полезные советы</h2>
+            <ul>
+                <li><strong>«❌ Отмена»</strong> (reply-кнопка) — сбросить любое ожидание (заметка, планирование, редактирование)</li>
+                <li><strong>«—»</strong> при вводе = очистить поле</li>
+                <li><strong>Телефон</strong> можно вводить в любом формате — нормализуется автоматически</li>
+                <li><strong>Дата</strong> — <code>ДД.ММ.ГГГГ</code> (не <code>ГГГГ-ММ-ДД</code>)</li>
+                <li><strong>Напоминания</strong> приходят <strong>только за 5 минут</strong> до события</li>
+                <li><strong>Голос</strong> работает и для текстовых команд, и наоборот</li>
+                <li><strong>Событие в прошлом</strong> создать/перенести нельзя — бот откажет</li>
+                <li><strong>Редактирование/удаление/перенос</strong> — через кнопки в деталях события</li>
+            </ul>
+        </section>
+
+        <section id="troubleshoot">
+            <h2><span class="emoji">🆘</span> Если что-то не работает</h2>
+
+            <h3>Бот не отвечает</h3>
+            <p>Напиши <code>/start</code>. Если не помогло — сообщи админу.</p>
+
+            <h3>Напоминание не пришло</h3>
+            <p>Проверь:</p>
+            <ul>
+                <li>событие <strong>не выполнено</strong> (<code>is_completed=False</code>),</li>
+                <li><code>scheduled_date</code> в <strong>ближайшие 5 минут</strong>,</li>
+                <li><code>reminder_sent_at</code> <strong>пусто</strong> (не отправлялось ранее),</li>
+                <li>бот <strong>не заблокирован</strong>.</li>
+            </ul>
+
+            <h3>Ошибка распознавания визитки</h3>
+            <p>Сфотографируй <strong>крупнее</strong>, при <strong>хорошем свете</strong>, <strong>параллельно</strong> визитке.</p>
+
+            <h3>Голос не распознаётся</h3>
+            <p>Говори <strong>чётче</strong>, без фонового шума.</p>
+
+            <h3>Не вижу событие в календаре</h3>
+            <p>Проверь месяц/день. Слоты 15-минутные: событие <code>18:36:45</code> показывается в слоте <code>18:30</code>.</p>
+
+            <h3>Не могу перенести/создать в прошлом</h3>
+            <p>Это <strong>ограничение по дизайну</strong> — прошлое запрещено. Выбери будущую дату.</p>
+        </section>
+
+    </main>
+</div>
+
+<footer>
+    <p><strong>CRM «УЮт» Бот</strong> · Версия 1.1 · 03.11.2026</p>
+    <p style="margin-top: 8px;">
+        Админ: <a href="https://t.me/longsnake">@longsnake</a> ·
+        <a href="http://192.168.0.102:3001/admin/">Админка</a> ·
+        <a href="http://192.168.0.102:5555">Flower</a>
+    </p>
+</footer>
+
+<script>
+    const themeToggle = document.getElementById('theme-toggle');
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        themeToggle.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+    }
+    themeToggle.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        themeToggle.textContent = next === 'dark' ? '☀️' : '🌙';
+    });
+
+    const sections = document.querySelectorAll('section[id]');
+    const navLinks = document.querySelectorAll('#toc a');
+    const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                navLinks.forEach(link => {
+                    link.classList.toggle('active',
+                        link.getAttribute('href') === '#' + entry.target.id);
+                });
+            }
+        });
+    }, { rootMargin: '-80px 0px -70% 0px' });
+    sections.forEach(section => observer.observe(section));
+
+    const searchInput = document.getElementById('search');
+    const main = document.getElementById('content');
+    let originalHTML = main.innerHTML;
+
+    searchInput.addEventListener('input', (e) => {
+        const query = e.target.value.trim().toLowerCase();
+        if (!query) {
+            main.innerHTML = originalHTML;
+            return;
+        }
+        const temp = document.createElement('div');
+        temp.innerHTML = originalHTML;
+        temp.querySelectorAll('section').forEach(section => {
+            const text = section.textContent.toLowerCase();
+            if (!text.includes(query)) {
+                section.classList.add('hidden');
+            }
+        });
+        main.innerHTML = temp.innerHTML;
+    });
+</script>
+
+</body>
+</html>
