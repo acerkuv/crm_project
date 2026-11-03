@@ -70,18 +70,34 @@ const Events = () => {
 
   // Загрузка событий
   const fetchEvents = async () => {
-    setLoading(true);
-    try {
-      const response = await api.get('/api/scheduled-events/');
-      const eventsData = response.data.results || response.data;
-      setEvents(eventsData);
-    } catch (error) {
-      console.error('❌ Ошибка загрузки:', error);
-      message.error('Ошибка загрузки событий');
-    } finally {
-      setLoading(false);
+  setLoading(true);
+  try {
+    let allEvents = [];
+    let nextUrl = '/api/scheduled-events/';
+    let page = 0;
+    while (nextUrl && page < 20) {  // safety: не больше 20 страниц
+      const response = await api.get(nextUrl);
+      const data = response.data;
+      const chunk = data.results || data;
+      allEvents = allEvents.concat(chunk);
+      // next — полный URL; берём только path+query
+      if (data.next) {
+        const u = new URL(data.next);
+        nextUrl = u.pathname + u.search;
+      } else {
+        nextUrl = null;
+      }
+      page++;
     }
-  };
+    console.log('📥 total events:', allEvents.length);
+    setEvents(allEvents);
+  } catch (error) {
+    console.error('❌ Ошибка загрузки:', error);
+    message.error('Ошибка загрузки событий');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Загрузка клиентов
   const fetchClients = async () => {
@@ -296,13 +312,8 @@ const handleCompleteAndPlan = async (event) => {
       const currentDate = dayjs().year(year).month(month).date(day);
       const hasEvents = hasEventsOnDay(currentDate);
       const dayEvents = getEventsForDay(currentDate);
-      if (hasEvents || day === 3) {   // логируем только 3-е или дни с событиями
-        console.log('🎨 day', day, {
-          currentDate: currentDate.format('YYYY-MM-DD'),
-          hasEvents,
-          dayEventsCount: dayEvents.length,
-          dayEventsTitles: dayEvents.map(e => e.title),
-        });
+      if (hasEvents) {
+        console.log('🎨 hasEvents day', day, dayEvents.map(e => e.title));
       }
       const isToday = currentDate.isSame(dayjs(), 'day');
       const isPast = currentDate.isBefore(dayjs(), 'day');
