@@ -554,3 +554,108 @@ def get_custom_fields_keyboard(client_id, custom_fields):
     keyboard.append([{"text": "➕ Добавить поле", "callback_data": f"custom_field_add_{client_id}"}])
     keyboard.append([{"text": "⬅️ Назад", "callback_data": f"client_detail_{client_id}"}])
     return {"inline_keyboard": keyboard}
+
+def get_reschedule_calendar_keyboard(month, year, event_id):
+    """Календарь для переноса события (callback'и с event_id)."""
+    from apps.clients.models import ScheduledEvent
+    from django.utils import timezone
+    from .time_utils import USER_TIMEZONE, to_user_time
+
+    days_in_month = monthrange(year, month)[1]
+    first_day_of_month = datetime(year, month, 1).weekday()
+
+    # События месяца (для подсветки)
+    start_msk = datetime(year, month, 1, 0, 0, 0)
+    start_msk = timezone.make_aware(start_msk, USER_TIMEZONE)
+    start_utc = start_msk.astimezone(timezone.utc)
+
+    end_msk = datetime(year, month, days_in_month, 23, 59, 59)
+    end_msk = timezone.make_aware(end_msk, USER_TIMEZONE)
+    end_utc = end_msk.astimezone(timezone.utc)
+
+    events_days = set()
+    for event in ScheduledEvent.objects.filter(
+        scheduled_date__gte=start_utc,
+        scheduled_date__lte=end_utc,
+        is_completed=False,
+    ):
+        events_days.add(to_user_time(event.scheduled_date).day)
+
+    keyboard = []
+    keyboard.append([
+        {"text": f"🔄 Перенос на {MONTHS_RU[month]} {year}", "callback_data": "noop"}
+    ])
+
+    weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+    keyboard.append([{"text": d, "callback_data": "noop"} for d in weekdays])
+
+    row = []
+    for _ in range(first_day_of_month):
+        row.append({"text": " ", "callback_data": "noop"})
+
+    today = datetime.now()
+    for day in range(1, days_in_month + 1):
+        has_events = day in events_days
+        is_past = (
+            year < today.year
+            or (year == today.year and month < today.month)
+            or (year == today.year and month == today.month and day < today.day)
+        )
+        if is_past:
+            text = f"◻️{day}" if not has_events else f"•{day}•"
+            cb = "noop"
+        else:
+            text = f"{day}" if not has_events else f"•{day}•"
+            cb = f"event_reschedule_day_{event_id}_{day}_{month}_{year}"
+
+        row.append({"text": text, "callback_data": cb})
+        if len(row) == 7:
+            keyboard.append(row)
+            row = []
+
+    if row:
+        while len(row) < 7:
+            row.append({"text": " ", "callback_data": "noop"})
+        keyboard.append(row)
+
+    prev_month = month - 1 if month > 1 else 12
+    prev_year = year if month > 1 else year - 1
+    next_month = month + 1 if month < 12 else 1
+    next_year = year if month < 12 else year + 1
+
+    keyboard.append([
+        {"text": f"◀️ {MONTHS_RU[prev_month]}", "callback_data": f"event_reschedule_month_{event_id}_{prev_month}_{prev_year}"},
+        {"text": f"{MONTHS_RU[month]} {year}", "callback_data": "noop"},
+        {"text": f"{MONTHS_RU[next_month]} ▶️", "callback_data": f"event_reschedule_month_{event_id}_{next_month}_{next_year}"},
+    ])
+    keyboard.append([
+        {"text": "⬅️ Отмена", "callback_data": f"event_detail_{event_id}"},
+    ])
+    return {"inline_keyboard": keyboard}
+
+
+def get_reschedule_hours_keyboard(event_id):
+    """Часы для переноса."""
+    keyboard = []
+    row = []
+    for hour in range(8, 23):
+        row.append({"text": f"{hour:02d}:00", "callback_data": f"event_reschedule_hour_{event_id}_{hour}"})
+        if len(row) == 4:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    keyboard.append([{"text": "⬅️ Отмена", "callback_data": f"event_detail_{event_id}"}])
+    return {"inline_keyboard": keyboard}
+
+
+def get_reschedule_minutes_keyboard(event_id, hour):
+    """Минуты для переноса."""
+    keyboard = []
+    row = []
+    for minute in [0, 15, 30, 45]:
+        row.append({"text": f"{hour:02d}:{minute:02d}", "callback_data": f"event_reschedule_minute_{event_id}_{hour}_{minute}"})
+    keyboard.append(row)
+    keyboard.append([{"text": "⬅️ Назад к часам", "callback_data": f"event_reschedule_start_{event_id}"}])
+    keyboard.append([{"text": "⬅️ Отмена", "callback_data": f"event_detail_{event_id}"}])
+    return {"inline_keyboard": keyboard}

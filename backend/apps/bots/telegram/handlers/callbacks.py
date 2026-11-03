@@ -255,6 +255,35 @@ class CallbacksMixin:
                 await self._handle_event_edit_type_menu(update, context, event_id)
             return
 
+        if data.startswith('event_reschedule_start_'):
+            event_id = int(data.split('_')[3])
+            await self._handle_event_reschedule_start(update, context, event_id)
+            return
+
+        if data.startswith('event_reschedule_month_'):
+            parts = data.split('_')
+            event_id = int(parts[3]); month = int(parts[4]); year = int(parts[5])
+            await self._handle_event_reschedule_month(update, context, event_id, month, year)
+            return
+
+        if data.startswith('event_reschedule_day_'):
+            parts = data.split('_')
+            event_id = int(parts[3]); day = int(parts[4]); month = int(parts[5]); year = int(parts[6])
+            await self._handle_event_reschedule_day(update, context, event_id, day, month, year)
+            return
+
+        if data.startswith('event_reschedule_hour_'):
+            parts = data.split('_')
+            event_id = int(parts[3]); hour = int(parts[4])
+            await self._handle_event_reschedule_hour(update, context, event_id, hour)
+            return
+
+        if data.startswith('event_reschedule_minute_'):
+            parts = data.split('_')
+            event_id = int(parts[3]); hour = int(parts[4]); minute = int(parts[5])
+            await self._handle_event_reschedule_minute(update, context, event_id, hour, minute)
+            return
+
         if data.startswith('event_delete_'):
             event_id = int(data.split('_')[2])
             await self._handle_event_delete(update, context, event_id)

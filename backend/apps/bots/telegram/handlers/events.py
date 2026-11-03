@@ -688,6 +688,9 @@ class EventsMixin:
             "✏️ Изменить", callback_data=f"event_edit_menu_{event.id}"
         )])
         keyboard.append([InlineKeyboardButton(
+            "🔄 Перенести", callback_data=f"event_reschedule_start_{event.id}"
+        )])
+        keyboard.append([InlineKeyboardButton(
             "🗑 Удалить", callback_data=f"event_delete_confirm_{event.id}"
         )])
         keyboard.append([
@@ -983,6 +986,132 @@ class EventsMixin:
             f"📌 {event.title}",
             parse_mode='Markdown',
         )
+        await self._handle_event_detail(update, context, event_id)
+
+    async def _handle_event_reschedule_start(self, update, context, event_id):
+        """Начало переноса — календарь на текущий месяц."""
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return ScheduledEvent.objects.filter(id=event_id).first()
+
+        event = await sync_to_async(_get)()
+        if not event:
+            await query.edit_message_text("❌ Событие не найдено")
+            return
+
+        context.user_data['reschedule_event_id'] = event_id
+
+        from datetime import datetime as _dt
+        from ..keyboards import get_reschedule_calendar_keyboard
+        today = _dt.now()
+        keyboard = get_reschedule_calendar_keyboard(today.month, today.year, event_id)
+
+        from ..time_utils import to_user_time
+        ut = to_user_time(event.scheduled_date)
+        await query.edit_message_text(
+            f"🔄 *Перенос события*\n\n"
+            f"📌 {event.title}\n"
+            f"📅 Сейчас: {ut.strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"Выберите новую дату:",
+            parse_mode='Markdown',
+            reply_markup=keyboard,
+        )
+
+    async def _handle_event_reschedule_month(self, update, context, event_id, month, year):
+        """Переключение месяца в календаре переноса."""
+        query = update.callback_query
+        await query.answer()
+
+        from ..keyboards import get_reschedule_calendar_keyboard
+        keyboard = get_reschedule_calendar_keyboard(month, year, event_id)
+        await query.edit_message_text(
+            f"🔄 *Перенос — {MONTHS_RU[month]} {year}*\n\nВыберите день:",
+            parse_mode='Markdown',
+            reply_markup=keyboard,
+        )
+
+    async def _handle_event_reschedule_day(self, update, context, event_id, day, month, year):
+        """Выбор дня — показать часы."""
+        query = update.callback_query
+        await query.answer()
+
+        context.user_data['reschedule_day'] = day
+        context.user_data['reschedule_month'] = month
+        context.user_data['reschedule_year'] = year
+
+        from ..keyboards import get_reschedule_hours_keyboard
+        keyboard = get_reschedule_hours_keyboard(event_id)
+        await query.edit_message_text(
+            f"🔄 *Перенос — {day} {MONTHS_RU[month]} {year}*\n\nВыберите час:",
+            parse_mode='Markdown',
+            reply_markup=keyboard,
+        )
+
+    async def _handle_event_reschedule_hour(self, update, context, event_id, hour):
+        """Выбор часа — показать минуты."""
+        query = update.callback_query
+        await query.answer()
+
+        from ..keyboards import get_reschedule_minutes_keyboard
+        keyboard = get_reschedule_minutes_keyboard(event_id, hour)
+        await query.edit_message_text(
+            f"🔄 *Перенос*\n\nВыберите минуты для {hour:02d}:00:",
+            parse_mode='Markdown',
+            reply_markup=keyboard,
+        )
+
+    async def _handle_event_reschedule_minute(self, update, context, event_id, hour, minute):
+        """Выбор минут — применить перенос."""
+        query = update.callback_query
+        await query.answer()
+
+        day = context.user_data.pop('reschedule_day', None)
+        month = context.user_data.pop('reschedule_month', None)
+        year = context.user_data.pop('reschedule_year', None)
+        context.user_data.pop('reschedule_event_id', None)
+
+        if not all([day, month, year]):
+            await query.edit_message_text("❌ Данные потеряны. Начните заново.")
+            return
+
+        try:
+            new_dt = create_user_datetime(year, month, day, hour, minute)
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка даты: {e}")
+            return
+
+        from ..validators import is_past, past_error_message
+        if is_past(new_dt):
+            await query.edit_message_text(past_error_message())
+            return
+
+        def _save():
+            event = ScheduledEvent.objects.filter(id=event_id).first()
+            if not event:
+                return None
+            event.scheduled_date = new_dt
+            event.reminder_sent_at = None  # сбросить, чтобы напомнило снова
+            event.save(update_fields=['scheduled_date', 'reminder_sent_at'])
+            return event
+
+        event = await sync_to_async(_save)()
+        if not event:
+            await query.edit_message_text("❌ Событие не найдено")
+            return
+
+        from ..time_utils import to_user_time
+        ut = to_user_time(event.scheduled_date)
+        await query.edit_message_text(
+            f"✅ *Событие перенесено*\n\n"
+            f"📌 {event.title}\n"
+            f"👤 {event.client.first_name} {event.client.last_name}\n"
+            f"📅 Новое время: {ut.strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"Напоминание сработает в новое время.",
+            parse_mode='Markdown',
+        )
+        # Показать детали
         await self._handle_event_detail(update, context, event_id)
 
     # ============ ПЛАНИРОВАНИЕ: СЛОТ ============
