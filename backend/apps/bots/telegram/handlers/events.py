@@ -91,6 +91,14 @@ class EventsMixin:
             from apps.bots.telegram.birthday_utils import next_birthday as _nb
             scheduled_date = _nb(client.birth_date, timezone.now().date())
 
+            from apps.users.models import TelegramUser
+            tg_user = await sync_to_async(
+                lambda: TelegramUser.objects.filter(
+                    telegram_id=str(update.effective_user.id)
+                ).first()
+            )()
+            user = tg_user.user if tg_user else None
+
             event = await sync_to_async(ScheduledEvent.objects.create)(
                 client=client,
                 title=f"Поздравление с ДР: {client.first_name}",
@@ -99,6 +107,7 @@ class EventsMixin:
                 scheduled_date=datetime.combine(scheduled_date, timezone.now().time()),
                 is_ai_generated=True,
                 ai_content=greeting,
+                user=user,
             )
             keyboard = [
                 [InlineKeyboardButton("📤 Отправить сейчас", callback_data=f"send_birthday_{event.id}")],
@@ -134,6 +143,15 @@ class EventsMixin:
         from apps.bots.telegram.birthday_utils import next_birthday as _nb
         scheduled_date = _nb(client.birth_date, timezone.now().date())
 
+        from apps.users.models import TelegramUser
+        tg_user = await sync_to_async(
+            lambda: TelegramUser.objects.filter(
+                telegram_id=str(update.effective_user.id)
+            ).first()
+        )()
+
+        user = tg_user.user if tg_user else None
+
         event = await sync_to_async(ScheduledEvent.objects.create)(
             client=client,
             title=f"Поздравление с ДР: {client.first_name}",
@@ -142,6 +160,7 @@ class EventsMixin:
             scheduled_date=datetime.combine(scheduled_date, timezone.now().time()),
             is_ai_generated=False,
             ai_content=text,
+            user=user,   # ← добавить
         )
         keyboard = [
             [InlineKeyboardButton("📤 Отправить сейчас", callback_data=f"send_birthday_{event.id}")],
@@ -358,6 +377,14 @@ class EventsMixin:
             await query.edit_message_text("❌ Клиент не найден")
             return
 
+        from apps.users.models import TelegramUser
+        tg_user = await sync_to_async(
+            lambda: TelegramUser.objects.filter(
+                telegram_id=str(update.effective_user.id)
+            ).first()
+        )()
+        user = tg_user.user if tg_user else None
+
         try:
             event = await sync_to_async(ScheduledEvent.objects.create)(
                 client=client,
@@ -366,6 +393,8 @@ class EventsMixin:
                 event_type=action,
                 scheduled_date=scheduled_date,
                 is_completed=False,
+                user=user,
+
             )
 
             action_names = {
@@ -576,63 +605,6 @@ class EventsMixin:
         except Exception as e:
             logger.error(f"Ошибка слота: {e}")
 
-    async def _handle_event_detail(self, update, context, event_id):
-        query = update.callback_query
-        await query.answer()
-
-        def _get():
-            return ScheduledEvent.objects.filter(id=event_id).first()
-
-        event = await sync_to_async(_get)()
-        if not event:
-            await query.edit_message_text("❌ Событие не найдено")
-            return
-
-        from ..time_utils import to_user_time
-        ut = to_user_time(event.scheduled_date)
-        time_str = ut.strftime('%d.%m.%Y %H:%M')
-        if event.is_completed:
-            status = "✅ Отправлено" if event.event_type == 'birthday' else "✅ Выполнено"
-        else:
-            status = "⏳ Ожидает отправки" if event.event_type == 'birthday' else "⏳ Ожидает"
-
-        text = (
-            f"📌 *{event.title}*\n\n"
-            f"👤 {event.client.first_name} {event.client.last_name}\n"
-            f"📞 {event.client.phone}\n"
-            f"📅 {time_str}\n"
-            f"📊 {status}\n"
-        )
-        if event.description:
-            text += f"\n📝 {event.description}\n"
-
-        keyboard = []
-        if event.event_type == 'birthday' and event.client and event.client.telegram_id and not event.is_completed:
-            keyboard.append([InlineKeyboardButton(
-                "📤 Отправить поздравление сейчас",
-                callback_data=f"event_send_birthday_{event.id}"
-            )])
-        if not event.is_completed:
-            keyboard.append([InlineKeyboardButton(
-                "✅ Отметить выполненным", callback_data=f"event_complete_{event.id}"
-            )])
-        keyboard.append([InlineKeyboardButton(
-            "✏️ Изменить", callback_data=f"event_edit_menu_{event.id}"
-        )])
-        keyboard.append([InlineKeyboardButton(
-            "🗑 Удалить", callback_data=f"event_delete_confirm_{event.id}"
-        )])
-        keyboard.append([
-            InlineKeyboardButton("⬅️ К дню", callback_data=f"event_back_to_day_{ut.day}_{ut.month}_{ut.year}"),
-            InlineKeyboardButton("📅 Календарь", callback_data=f"event_back_to_calendar_{ut.month}_{ut.year}"),
-        ])
-        keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")])
-
-        reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-        try:
-            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
-        except Exception as e:
-            logger.error(f"Ошибка деталей: {e}")
 
     async def _handle_event_detail(self, update, context, event_id):
         """Детали события."""
@@ -889,7 +861,11 @@ class EventsMixin:
             parse_mode='Markdown',
         )
 
-        # Показываем детали
+        # Показываем детали через _handle_event_detail (там есть _esc и все кнопки)
+        # _handle_event_detail работает с callback_query, а у нас update.message
+        # поэтому сделаем «фейковый» callback или вызовем через chat_id
+        # Проще: отправить сообщение с кнопками вручную, но с _esc
+
         from ..time_utils import to_user_time
         ut = to_user_time(event.scheduled_date)
         if event.is_completed:
@@ -897,15 +873,23 @@ class EventsMixin:
         else:
             status = "⏳ Ожидает отправки" if event.event_type == 'birthday' else "⏳ Ожидает"
 
+        def _esc(s):
+            if s is None:
+                return ''
+            s = str(s)
+            for ch in ('_', '*', '`', '[', ']'):
+                s = s.replace(ch, '\\' + ch)
+            return s
+
         card_text = (
-            f"📌 *{event.title}*\n\n"
-            f"👤 {event.client.first_name} {event.client.last_name}\n"
-            f"📞 {event.client.phone}\n"
+            f"📌 *{_esc(event.title)}*\n\n"
+            f"👤 {_esc(event.client.first_name)} {_esc(event.client.last_name)}\n"
+            f"📞 {_esc(event.client.phone)}\n"
             f"📅 {ut.strftime('%d.%m.%Y %H:%M')}\n"
-            f"📊 {status}\n"
+            f"📊 {_esc(status)}\n"
         )
         if event.description:
-            card_text += f"\n📝 {event.description}\n"
+            card_text += f"\n📝 {_esc(event.description)}\n"
 
         keyboard = []
         if event.event_type == 'birthday' and event.client and event.client.telegram_id and not event.is_completed:
@@ -919,6 +903,9 @@ class EventsMixin:
             )])
         keyboard.append([InlineKeyboardButton(
             "✏️ Изменить", callback_data=f"event_edit_menu_{event.id}"
+        )])
+        keyboard.append([InlineKeyboardButton(
+            "🔄 Перенести", callback_data=f"event_reschedule_start_{event.id}"
         )])
         keyboard.append([InlineKeyboardButton(
             "🗑 Удалить", callback_data=f"event_delete_confirm_{event.id}"

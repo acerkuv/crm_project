@@ -318,6 +318,19 @@ const handleCompleteAndPlan = async (event) => {
       const isToday = currentDate.isSame(dayjs(), 'day');
       const isPast = currentDate.isBefore(dayjs(), 'day');
       const isSelected = currentDate.isSame(selectedDate, 'day');
+
+      if (day === 4) {
+      const dayEvents = getEventsForDay(currentDate);
+      const allDayEvents = events.filter(e => {
+        const d = dayjs(e.scheduled_date);
+        return d.format('YYYY-MM-DD') === '2026-11-04' || d.add(3, 'hour').format('YYYY-MM-DD') === '2026-11-04';
+      });
+      console.log('🔍 4 ноября:', {
+        foundByIsSame: dayEvents.map(e => ({ id: e.id, raw: e.scheduled_date, local: dayjs(e.scheduled_date).format('YYYY-MM-DD HH:mm') })),
+        allWithMSKDate: allDayEvents.map(e => ({ id: e.id, raw: e.scheduled_date, local: dayjs(e.scheduled_date).format('YYYY-MM-DD HH:mm') })),
+        browserTZ: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+    }
       
       currentWeek.push({
         day,
