@@ -94,6 +94,10 @@ const Events = () => {
     }
   };
 
+  const changeMonth = (delta) => {
+    setSelectedDate(prev => prev.add(delta, 'month'));
+  };
+
   useEffect(() => {
     fetchEvents();
     fetchClients();
@@ -278,7 +282,7 @@ const handleCompleteAndPlan = async (event) => {
     const month = selectedDate.month();
     const firstDay = dayjs().year(year).month(month).date(1);
     const daysInMonth = firstDay.daysInMonth();
-    const startDayOfWeek = firstDay.day(); // 0 - воскресенье
+    const startDayOfWeek = (firstDay.day() + 6) % 7;
 
     const weeks = [];
     let currentWeek = [];
@@ -292,10 +296,18 @@ const handleCompleteAndPlan = async (event) => {
       const currentDate = dayjs().year(year).month(month).date(day);
       const hasEvents = hasEventsOnDay(currentDate);
       const dayEvents = getEventsForDay(currentDate);
+      if (hasEvents || day === 3) {   // логируем только 3-е или дни с событиями
+        console.log('🎨 day', day, {
+          currentDate: currentDate.format('YYYY-MM-DD'),
+          hasEvents,
+          dayEventsCount: dayEvents.length,
+          dayEventsTitles: dayEvents.map(e => e.title),
+        });
+      }
       const isToday = currentDate.isSame(dayjs(), 'day');
       const isPast = currentDate.isBefore(dayjs(), 'day');
       const isSelected = currentDate.isSame(selectedDate, 'day');
-
+      
       currentWeek.push({
         day,
         date: currentDate,
@@ -323,7 +335,8 @@ const handleCompleteAndPlan = async (event) => {
     // Дни недели
     const weekDays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
     // Переносим на понедельник
-    const shiftedWeekDays = [...weekDays.slice(1), weekDays[0]];
+    const shiftedWeekDays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
 
     return (
       <div>
