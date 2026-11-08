@@ -99,7 +99,7 @@ def get_clients_list_message(clients, page=1, per_page=5):
     """Формирует сообщение со списком клиентов - кнопки под каждой карточкой"""
     from .keyboards import get_client_compact_keyboard
     
-    total = clients.count()
+    total = len(clients)
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
     
     start = (page - 1) * per_page
