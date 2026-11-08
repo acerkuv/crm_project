@@ -165,6 +165,22 @@ class ClientsMixin:
             message_text = header + message_text
         await query.edit_message_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
 
+    async def _handle_list_page(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int):
+        """Пагинация списка клиентов (callback list_page_*)."""
+        query = update.callback_query
+        await query.answer()
+
+        def _get():
+            return list(Client.objects.all().order_by('-created_at'))
+
+        clients = await sync_to_async(_get)()
+        message_text, keyboard = get_clients_list_message(clients, page)
+        try:
+            await query.edit_message_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"Ошибка пагинации списка: {e}")
+            await query.message.reply_text(message_text, parse_mode='Markdown', reply_markup=keyboard)
+
     async def _handle_client_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE, client_id: int):
         query = update.callback_query
         await query.answer()
