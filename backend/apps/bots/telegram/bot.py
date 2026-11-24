@@ -29,6 +29,8 @@ import requests
 import json as json_lib
 import uuid
 
+from telegram.request import HTTPXRequest  # Добавлен импорт для настройки таймаутов
+
 from .handlers.photos import PhotosMixin
 from .handlers.commands import CommandsMixin
 from .handlers.clients import ClientsMixin
@@ -97,13 +99,21 @@ class TelegramBot(PhotosMixin, CommandsMixin, ClientsMixin, EventsMixin,
 
         logger.info("🚀 Запуск бота в режиме polling...")
 
-        proxy_url = os.environ.get('TELEGRAM_PROXY_URL', '')
+        # proxy_url = os.environ.get('TELEGRAM_PROXY_URL', '')
         builder = Application.builder().token(self.token)
-        if proxy_url:
-            logger.info(f"🔗 Использую прокси: {proxy_url}")
-            from telegram.request import HTTPXRequest
-            request = HTTPXRequest(proxy=proxy_url)
-            builder = builder.request(request).get_updates_request(request)
+        # Настройка HTTPXRequest с увеличенными таймаутами для стабильного соединения
+        request = HTTPXRequest(
+            connect_timeout=20.0,
+            read_timeout=20.0,
+            write_timeout=20.0,
+            pool_timeout=20.0
+        )
+        builder = builder.request(request).get_updates_request(request)
+        # if proxy_url:
+        #     logger.info(f"🔗 Использую прокси: {proxy_url}")
+        #     from telegram.request import HTTPXRequest
+        #     request = HTTPXRequest(proxy=proxy_url)
+        #     builder = builder.request(request).get_updates_request(request)
 
         app = builder.build()
 

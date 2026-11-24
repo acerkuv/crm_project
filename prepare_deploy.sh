@@ -3,17 +3,21 @@
 # Запускать локально из корня проекта crm_project/
 #
 # ВАЖНО (один раз на сервере):
-#   ssh acerkuv@192.168.0.102
-#   sudo mkdir -p /opt/temp/crm_project/{releases,backups,shared}
-#   sudo chown -R acerkuv:acerkuv /opt/temp/crm_project
+#   ssh root@45.144.175.70
+#   mkdir -p /opt/temp/crm_project/{releases,backups,shared}
+#   # .env.prod положить в /opt/temp/crm_project/shared/.env.prod
 #   exit
+#
+# Вход на сервер — по ПАРОЛЮ (root). Скрипт запросит пароль дважды:
+# один раз для ssh (создание папки), один раз для scp (копирование файлов).
+# Чтобы вернуться к входу по ключу — см. блок "ОПЦИОНАЛЬНО" в конце скрипта.
 
 set -euo pipefail
 
 # ============ НАСТРОЙКИ ============
 PROJECT_NAME="crm_project"
-SERVER_USER="acerkuv"
-SERVER_HOST="192.168.0.102"
+SERVER_USER="root"                 # на новом сервере работаем под root
+SERVER_HOST="45.144.175.70"        # новый публичный IP (исправлен!)
 SERVER_DIR="/opt/temp/${PROJECT_NAME}"
 
 ARCHIVE_NAME="crm_deploy_$(date +%Y%m%d_%H%M%S).tar.gz"
@@ -102,11 +106,14 @@ log "Архив готов: ${ARCHIVE_NAME} (${ARCHIVE_SIZE})"
 # ============ Отправка на сервер ============
 read -r -p "Отправить архив на ${SERVER_USER}@${SERVER_HOST}? [y/N] " ANS
 if [[ "${ANS,,}" == "y" ]]; then
-    log "Проверяю папку на сервере..."
+    warn "Вход по паролю: ssh и scp запросят пароль root ДВАЖДЫ (отдельно для каждой команды)."
+    warn "Если пароль не подойдёт — подключение прервётся, архив останется локально."
+
+    log "Проверяю папку на сервере (потребуется пароль root)..."
     ssh "${SERVER_USER}@${SERVER_HOST}" \
         "mkdir -p ${SERVER_DIR}/releases"
 
-    log "Копирую архив..."
+    log "Копирую архив (снова потребуется пароль root)..."
     scp "${ARCHIVE_NAME}" "${SERVER_USER}@${SERVER_HOST}:${SERVER_DIR}/releases/"
     [[ -f "${ARCHIVE_NAME}.sha256" ]] && \
         scp "${ARCHIVE_NAME}.sha256" "${SERVER_USER}@${SERVER_HOST}:${SERVER_DIR}/releases/"
@@ -116,3 +123,18 @@ if [[ "${ANS,,}" == "y" ]]; then
     echo "    cd ${SERVER_DIR}"
     echo "    ./deploy.sh releases/${ARCHIVE_NAME}"
 fi
+
+# ============ ОПЦИОНАЛЬНО: вернуться к входу по ключу ============
+# Если надоест вводить пароль дважды — можно один раз скопировать публичный ключ
+# на сервер и дальше входить без пароля. На ЛОКАЛЬНОЙ машине (Git Bash):
+#
+#   ssh-keygen -t ed25519 -C "deploy@crm"      # если ключа ещё нет (Enter, Enter, Enter)
+#   ssh-copy-id root@45.144.175.70             # запросит пароль root ОДИН раз
+#
+# После этого ssh/scp будут работать без пароля. Если ssh-copy-id недоступен
+# (в Git Bash бывает), можно так:
+#
+#   cat ~/.ssh/id_ed25519.pub | ssh root@45.144.175.70 \
+#       "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+#
+# Пароль root всё равно спросит один раз — но дальше вход будет по ключу.
